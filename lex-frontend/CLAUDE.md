@@ -206,7 +206,8 @@ números em `relatorios/FIDELIDADE-R4.md`.
 DEC-069; a linha "processo · cliente" e o prazo por datas, DEC-164 e DEC-165),
 o seletor de situação da Agenda (DEC-052), o × do toast (DEC-083). E as
 correções de defeitos do original no desktop: o "Confirmar leitura" no cartão
-largo, o logo encostado no "Voltar" entre 1201 e 1365 px e o botão do 404.
+largo, o logo encostado no "Voltar" entre 1201 e 1365 px, o botão do 404 e
+os botões do menu de seleção em massa de Clientes (7 px para fora do menu).
 
 ## DEC-164 (reescrita para o front da Raniele) — "Precisa de atenção" com processo e cliente (fase R3)
 
@@ -302,7 +303,8 @@ Trava: `tests/reativacao.test.js`.
   Processos (tela inteira, como o dela; nas buscas seguintes continua na área
   da lista).
 - Defeitos do original corrigidos no desktop: "Confirmar leitura" no cartão
-  largo, logo encostado no "Voltar" (1201–1365 px), botão do 404.
+  largo, logo encostado no "Voltar" (1201–1365 px), botão do 404, menu de
+  seleção em massa de Clientes.
 - Guarda por `ref` no "Confirmar leitura" (clique duplo gravava duas vezes).
 - Celular, só com `@media`: telas públicas em uma coluna, cabeçalho da Agenda,
   datas do Financeiro, e-mails longos nos detalhes do cliente.
