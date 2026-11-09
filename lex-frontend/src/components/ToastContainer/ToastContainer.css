@@ -8,7 +8,14 @@
     flex-direction: column;
     gap: 0.75rem;
 
-    max-width: 24rem;
+    max-width: min(24rem, calc(100vw - 3rem));
+}
+
+/* As duas regiões vivas (DEC-083): sempre no DOM, vazias quando não há aviso. */
+.toastRegiao {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
 .toastItem {
@@ -21,6 +28,32 @@
 
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
     animation: toastEntrar 0.2s ease;
+
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.toastMensagem {
+    flex: 1;
+}
+
+.toastItem .toastFechar {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+}
+
+.toastItem .toastFechar img {
+    width: 14px;
+    height: 14px;
+}
+
+/* O fundo do sucesso e do erro é o mesmo nos dois temas: o ícone fica claro. */
+[data-theme="light"] .toastItem--success .toastFechar img,
+[data-theme="light"] .toastItem--error .toastFechar img {
+    filter: none;
 }
 
 .toastItem--success {
@@ -29,6 +62,11 @@
 
 .toastItem--error {
     background-color: var(--vermelho);
+}
+
+.toastItem--info {
+    background-color: var(--verdeClaro);
+    color: var(--bege);
 }
 
 @keyframes toastEntrar {
