@@ -53,6 +53,17 @@ describe("Ajuda — abrir, fechar e Esc", () => {
     assert.match(comp, /<button[\s\S]*?type="button"[\s\S]*?className="ajudaBotao"/);
   });
 
+  test("o '?' guarda 1rem dentro dos contêineres dela que dão tamanho a todo 'button' (classe repetida, antes do :hover)", () => {
+    const css = ler("src/components/Ajuda/Ajuda.css");
+    const bloco = css.match(/\.ajudaBotao\.ajudaBotao \{([^}]*)\}/);
+    assert.ok(bloco, "falta a regra .ajudaBotao.ajudaBotao");
+    for (const decl of ["width: 1rem", "height: 1rem", "padding: 0", "min-width: 0"]) assert.ok(bloco[1].includes(decl), decl);
+    assert.ok(css.indexOf(".ajudaBotao.ajudaBotao {") < css.indexOf(".ajudaBotao:hover"), "o :hover tem de vir depois");
+    // os contêineres que motivaram a regra continuam com o "?" dentro
+    assert.match(ler("src/pages/PortalAdvogada/Processos/ProcessosDetalhes.jsx"), /<Ajuda assunto=\{AJUDA\.processoParticipantes\.assunto\}/);
+    assert.match(ler("src/pages/PortalAdvogada/Processos/Processos.css"), /\.formNovoParticipante button \{/);
+  });
+
   test("o Esc é ouvido na captura e não se propaga (não fecha o modal junto)", () => {
     assert.match(comp, /addEventListener\("keydown", aoTeclar, true\)/);
     assert.match(comp, /e\.stopPropagation\(\);/);

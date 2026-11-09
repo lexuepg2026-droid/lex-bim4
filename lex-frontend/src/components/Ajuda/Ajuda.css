@@ -20,6 +20,20 @@
     cursor: pointer;
 }
 
+/* Contêineres dela dão tamanho a todo "button" de dentro (.formNovoParticipante
+   button, .acoesPortalForm button: altura 2.75rem e padding lateral), e o "?"
+   ficava 48x44 com o ícone de largura zero. A classe repetida vence esses
+   seletores sem tocar neles. Fica antes do :hover, que segue valendo. */
+.ajudaBotao.ajudaBotao {
+    width: 1rem;
+    height: 1rem;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+}
+
 .ajudaBotao img {
     display: block;
     width: 100%;
