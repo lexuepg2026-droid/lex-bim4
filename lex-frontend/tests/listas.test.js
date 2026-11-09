@@ -44,11 +44,25 @@ describe("o campo de busca não desmonta durante a busca", () => {
     }
   });
 
-  test("nenhuma tela com busca troca a tela inteira por <Loading />", () => {
+  // R4: a tela inteira dá lugar ao Loading só na PRIMEIRA carga, como no desenho
+  // dela; ali o campo de busca ainda não existe, então não há foco a perder.
+  const PRIMEIRA_CARGA = /if \(primeiraCarga\) return <Loading \/>;/;
+
+  test("nenhuma tela com busca troca a tela inteira por <Loading /> durante a busca", () => {
     const ofensoras = comBusca
-      .filter((f) => /return\s*\(?\s*<Loading\b/.test(readFileSync(f, "utf8")))
+      .filter((f) => /return\s*\(?\s*<Loading\b/.test(readFileSync(f, "utf8").replace(PRIMEIRA_CARGA, "")))
       .map((f) => relative(PAGINAS, f));
     assert.deepEqual(ofensoras, [], `estas telas desmontam a busca durante a carga: ${ofensoras.join(", ")}`);
+  });
+
+  test("a primeira carga não volta: depois da primeira resposta, o Loading é só o da lista", () => {
+    for (const f of comBusca) {
+      const codigo = readFileSync(f, "utf8");
+      if (!PRIMEIRA_CARGA.test(codigo)) continue;
+      assert.match(codigo, /const \[primeiraCarga, setPrimeiraCarga\] = useState\(true\)/, relative(PAGINAS, f));
+      assert.doesNotMatch(codigo, /setPrimeiraCarga\(true\)/, `${relative(PAGINAS, f)} volta à primeira carga`);
+      assert.match(codigo, /\{carregando \? \(\s*<Loading \/>/, `${relative(PAGINAS, f)}: falta o Loading na área da lista`);
+    }
   });
 });
 
