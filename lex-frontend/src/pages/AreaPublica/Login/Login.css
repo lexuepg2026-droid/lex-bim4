@@ -8,22 +8,33 @@
 }
 
 input.login {
-    width: min(24rem, 100%);
+    width: 24rem;
 }
 
 .buttonLogin {
-    width: min(24rem, 100%);
+    width: 24rem;
 }
 .erroLogin {
-    width: min(24rem, 100%);
+    width: 24rem;
     color: var(--vermelhoTexto);
     font-size: 0.85rem;
     text-align: center;
 }
 
 .infoLogin {
-    width: min(24rem, 100%);
+    width: 24rem;
     color: var(--bege70);
     font-size: 0.9rem;
     text-align: center;
+}
+
+/* Telas estreitas (DEC-170, refeita na R4): no desktop vale o 24rem dela; só
+   abaixo de 420 px o campo acompanha a coluna. */
+@media (max-width: 420px) {
+    input.login,
+    .buttonLogin,
+    .erroLogin,
+    .infoLogin {
+        width: 100%;
+    }
 }

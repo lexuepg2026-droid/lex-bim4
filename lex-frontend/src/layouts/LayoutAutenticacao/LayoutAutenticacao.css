@@ -22,9 +22,16 @@
 }
 
 .direitaAutenticacao a {
-    width: min(24rem, 100%);
+    width: 24rem;
 }
 
 .direitaAutenticacao {
     flex-direction: column;
+}
+
+/* Telas estreitas (DEC-170, refeita na R4): no desktop vale o 24rem dela. */
+@media (max-width: 420px) {
+    .direitaAutenticacao a {
+        width: 100%;
+    }
 }
