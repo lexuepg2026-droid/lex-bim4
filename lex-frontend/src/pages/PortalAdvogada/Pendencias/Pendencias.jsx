@@ -11,6 +11,8 @@ import { formatDate } from "../../../utils/formatters";
 import { toast } from "../../../utils/toast";
 
 import "./Pendencias.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const CAMPOS_COMPARAVEIS = [
     ["titulo", "Título"],
@@ -75,7 +77,7 @@ function Pendencias() {
         <div className="tela telaClientes">
             <div className="baloesTelasAdvogada">
                 <div className="pendenciasTopo">
-                    <h1 className="tituloPagina">Alterações não enviadas ({quantidade})</h1>
+                    <h1 className="tituloPagina">Alterações não enviadas ({quantidade})<Ajuda assunto={AJUDA.pendencias.assunto}>{AJUDA.pendencias.texto}</Ajuda></h1>
                     <button
                         type="button"
                         className="buttonOutlined"

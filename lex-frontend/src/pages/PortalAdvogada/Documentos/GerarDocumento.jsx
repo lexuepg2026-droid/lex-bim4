@@ -13,6 +13,8 @@ import { formatCurrency, formatDate } from "../../../utils/formatters";
 import { labelDe, nomeDoCliente, documentoDoCliente, PAPEL_PROCESSO_OPTIONS } from "../../../utils/enums";
 
 import "./Documentos.css";
+import { TextoComAjuda } from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const MOTIVOS_INCOMPATIVEIS = ["tipoIncompativel", "tipoHonorarioIncompativel", "parcelasDesiguais"];
 
@@ -202,7 +204,7 @@ function GerarDocumento({ modelo, totalSecoes, onFechar }) {
     return (
         <div className="modalOverlay" onClick={onFechar}>
             <div className="modalCaixa gerarCaixa" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                <h2 className="modalTitulo">Gerar "{modelo.nome}"</h2>
+                <h2 className="modalTitulo"><TextoComAjuda texto={`Gerar "${modelo.nome}"`} assunto={AJUDA.gerar.assunto}>{AJUDA.gerar.texto}</TextoComAjuda></h2>
 
                 {totalSecoes === 0 && (
                     <p className="avisoLacunas">Este modelo ainda não tem seções. Acrescente ao menos uma seção antes de gerar.</p>

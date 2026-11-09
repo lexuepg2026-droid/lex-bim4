@@ -12,6 +12,8 @@ import { prepararLogo, formatarTamanho } from "../../../utils/imagem";
 import { toast } from "../../../utils/toast";
 
 import "./Perfil.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const buildForm = (u) => ({
     nomeCompleto: u?.nomeCompleto || "",
@@ -348,7 +350,7 @@ function Perfil() {
                 </div>
 
                 <div className="logoCampo">
-                    <p className="logoTitulo">Timbrado</p>
+                    <p className="logoTitulo">Timbrado<Ajuda assunto={AJUDA.timbrado.assunto}>{AJUDA.timbrado.texto}</Ajuda></p>
                     <p className="campoAjuda">
                         Baixa uma folha em PDF com o timbrado dos documentos e recibos, montada com os dados já salvos. Salve as alterações antes de conferir.
                     </p>

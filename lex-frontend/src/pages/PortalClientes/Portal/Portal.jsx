@@ -7,6 +7,8 @@ import formatarCodProcesso from "../../../utils/formatarCodProcesso";
 import { getApiErrorMessage } from "../../../utils/apiError";
 
 import "./Portal.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 function Portal() {
     const navigate = useNavigate();
@@ -54,6 +56,7 @@ function Portal() {
                     <div className="divLabelTop">
                         <label htmlFor="codProcesso">
                             Código de acesso
+                            <Ajuda assunto={AJUDA.portalCodigo.assunto}>{AJUDA.portalCodigo.texto}</Ajuda>
                         </label>
 
                         <input className="input"

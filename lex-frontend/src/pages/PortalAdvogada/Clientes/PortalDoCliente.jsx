@@ -8,6 +8,8 @@ import { formatDate } from "../../../utils/formatters";
 import { labelDe, PAPEL_PROCESSO_OPTIONS } from "../../../utils/enums";
 
 import { LiberacaoPortal, EntregaAcesso } from "../Processos/AcessoPortal";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const dataHora = (iso) => (iso
     ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
@@ -66,7 +68,7 @@ function PortalDoCliente({ clienteId, nomeCliente }) {
         <div className="secaoDetalhe">
             {acesso.temSenhaPortal ? (
                 <div className="resumoPortalCliente">
-                    <p><strong>Código de acesso pessoal:</strong> <span className="entregaAcessoCodigo">{acesso.codigoAcessoPessoal}</span></p>
+                    <p><strong>Código de acesso pessoal:</strong> <span className="entregaAcessoCodigo">{acesso.codigoAcessoPessoal}</span><Ajuda assunto={AJUDA.clientePortal.assunto}>{AJUDA.clientePortal.texto}</Ajuda></p>
                     <p>
                         <strong>Senha:</strong>{" "}
                         {acesso.senhaPortalProvisoria

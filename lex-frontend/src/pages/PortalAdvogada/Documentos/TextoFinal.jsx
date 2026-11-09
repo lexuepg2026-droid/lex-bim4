@@ -17,6 +17,8 @@ import { labelDe, TIPO_DOCUMENTO_OPTIONS, TIPO_SECAO_OPTIONS } from "../../../ut
 import { ListaPendencias, textoDaSobrescrita } from "./GerarDocumento";
 
 import "./Documentos.css";
+import Ajuda, { TextoComAjuda } from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const idDe = (valor) => {
     if (valor == null) return null;
@@ -209,7 +211,7 @@ function TextoFinal({ documento }) {
             <div className="baloesTelasAdvogada">
                 <div className="detalheTopo">
                     <div>
-                        <h1 className="tituloPagina">{documento.nome}</h1>
+                        <h1 className="tituloPagina"><TextoComAjuda texto={documento.nome} assunto={AJUDA.textoFinal.assunto}>{AJUDA.textoFinal.texto}</TextoComAjuda></h1>
                         <p className="detalheSubtitulo">
                             {labelDe(TIPO_DOCUMENTO_OPTIONS, documento.tipo)}
                             {documento.dataGeracao ? ` · Gerado em ${formatDate(documento.dataGeracao)}` : ""}
@@ -245,6 +247,7 @@ function TextoFinal({ documento }) {
                     <button title={visivelPortal ? "O cliente deixa de ver este documento no portal" : "O cliente para quem o documento foi gerado poderá baixá-lo no portal"} type="button" className="buttonOutlined botaoAcaoParticipante" onClick={alternarPortal} disabled={alternandoPortal}>
                         {visivelPortal ? "Ocultar do portal" : "Liberar no portal"}
                     </button>
+                    <Ajuda assunto={AJUDA.visivelPortal.assunto}>{AJUDA.visivelPortal.texto}</Ajuda>
                     <button
                         type="button"
                         className="buttonOutlined botaoAcaoParticipante"
@@ -254,6 +257,7 @@ function TextoFinal({ documento }) {
                     >
                         {regerando ? "Regerando..." : "Regerar"}
                     </button>
+                    <Ajuda assunto={AJUDA.regerar.assunto}>{AJUDA.regerar.texto}</Ajuda>
                 </div>
 
                 {erro && <p className="mensagemErro">{erro}</p>}

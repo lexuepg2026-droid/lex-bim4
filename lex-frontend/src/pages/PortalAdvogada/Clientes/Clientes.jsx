@@ -19,6 +19,8 @@ import { corDoAvatar, inicialDoAvatar } from "../../../utils/avatarCliente";
 import { useFiltroNaUrl } from "../../../hooks/useFiltroNaUrl";
 
 import "./Clientes.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 function Clientes() {
     const [clientes, setClientes] = useState([]);
@@ -276,7 +278,7 @@ function Clientes() {
                     ) : (
                         <>
                             <h1 className="clientes">
-                                Clientes <span className="contadorClientes">({total})</span>
+                                Clientes <span className="contadorClientes">({total})</span><Ajuda assunto={AJUDA.clientesDesativar.assunto}>{AJUDA.clientesDesativar.texto}</Ajuda>
                             </h1>
 
                             <form className="barraPesquisar" onSubmit={(e) => e.preventDefault()}>
@@ -337,7 +339,7 @@ function Clientes() {
                 {carregando ? (
                     <Loading />
                 ) : clientes.length === 0 ? (
-                    !erro && <EmptyState titulo="Nenhum cliente encontrado." descricao="Tente ajustar os filtros ou cadastre um novo cliente." />
+                    !erro && <EmptyState titulo="Nenhum cliente encontrado." descricao="Ajuste os filtros ou cadastre um cliente no + ao lado da busca." />
                 ) : (
                     <div className="tabelaContainer">
                         <table className={`tabela ${modoSelecao ? "tabela--modoSelecao" : ""}`}>

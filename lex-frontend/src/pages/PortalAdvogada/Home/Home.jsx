@@ -26,6 +26,8 @@ import { getApiErrorMessage } from "../../../utils/apiError";
 import { dataDeCalendario, diaLocalDaquiA, prazoDaParcela, venceAte } from "../../../utils/datas";
 
 import "./Home.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
@@ -373,7 +375,7 @@ function Home() {
             </section>
 
             <section className="baloesTelasAdvogada homeResumo">
-                <h2 className="homeSubtitulo">Resumo geral</h2>
+                <h2 className="homeSubtitulo">Resumo geral<Ajuda assunto={AJUDA.inicioResumo.assunto}>{AJUDA.inicioResumo.texto}</Ajuda></h2>
                 <div className="homeCartoes">
                     {CARTOES.map((cartao) => (
                         <Cartao
@@ -439,6 +441,7 @@ function Home() {
                         {parcelasUrgentes.length > 0 && (
                             <span className="homeContador">{parcelasUrgentes.length}</span>
                         )}
+                        <Ajuda assunto={AJUDA.inicioAtencao.assunto}>{AJUDA.inicioAtencao.texto}</Ajuda>
                     </h2>
                     <Link to="/financeiro" className="homeLinkSecao">Ver financeiro</Link>
                 </div>

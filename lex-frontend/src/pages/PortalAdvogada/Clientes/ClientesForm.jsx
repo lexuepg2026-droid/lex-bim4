@@ -15,6 +15,8 @@ import { buscarCidadesPorEstado } from "../../../utils/ibge";
 import { useTabela } from "../../../hooks/useTabela";
 
 import "./Clientes.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 function ClientesForm() {
     const [tipoPessoa, setTipoPessoa] = useState("fisica");
@@ -258,7 +260,7 @@ function ClientesForm() {
                 )}
 
                 <div className="tituloInput seletorTipoPessoa">
-                    <label>Tipo de pessoa:</label>
+                    <label>Tipo de pessoa:<Ajuda assunto={AJUDA.clienteTipoPessoa.assunto}>{AJUDA.clienteTipoPessoa.texto}</Ajuda></label>
                     <div className="grupoRadio">
                         {TIPO_PESSOA_OPTIONS.map(({ value, label }) => (
                             <div key={value}>
@@ -648,7 +650,7 @@ function ClientesForm() {
                     </div>
 
                     <div className="secaoForm">
-                        <h3>Acesso ao portal</h3>
+                        <h3>Acesso ao portal<Ajuda assunto={AJUDA.clienteSenhaPortal.assunto}>{AJUDA.clienteSenhaPortal.texto}</Ajuda></h3>
 
                         {editando && (
                             <p className="notaForm">Situação: {textoDoEstadoDoPortal}.</p>
@@ -664,10 +666,11 @@ function ClientesForm() {
                                 onChange={handleChange}
                                 autoComplete="new-password"
                                 className={campoComErro === "senhaPortal" ? "inputErro" : undefined}
+                                aria-describedby="apoio-cliente-senha-portal"
                             />
                         </div>
 
-                        <p className="notaForm">
+                        <p className="notaForm" id="apoio-cliente-senha-portal">
                             Em branco, nada muda. Ao gravar uma senha, o acesso fica provisório: no primeiro login o portal pede que o cliente troque por uma que só ele conheça. Não use o CPF ou o CNPJ do cliente. O código de acesso é criado junto e aparece em "Entregar acesso", no processo ou na aba Portal do cliente.
                         </p>
 
@@ -685,6 +688,7 @@ function ClientesForm() {
                                     <button title="Remove a senha do cliente no portal" type="button" className="buttonOutlined" onClick={() => setConfirmandoRevogacao(true)}>
                                         Revogar acesso ao portal
                                     </button>
+                                    <Ajuda assunto={AJUDA.clienteRevogar.assunto}>{AJUDA.clienteRevogar.texto}</Ajuda>
                                 </div>
                             )
                         )}

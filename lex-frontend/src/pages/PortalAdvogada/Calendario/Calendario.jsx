@@ -25,6 +25,8 @@ import localizacao from "../../../assets/images/icons/localizacao.svg";
 import fechar from "../../../assets/images/icons/fechar.svg";
 import calendario from "../../../assets/images/icons/calendario.svg";
 import relogio from "../../../assets/images/icons/relogio.svg";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const DIAS_SEMANA = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 
@@ -438,7 +440,7 @@ function Calendario() {
             <div className="baloesTelasAdvogada calendarioCardPrincipal">
                 <div className="calendarioCabecalhoTopo">
                     <div className="calendarioCabecalhoEsquerda">
-                        <h1 className="calendarioTitulo">Calendário</h1>
+                        <h1 className="calendarioTitulo">Calendário<Ajuda assunto={AJUDA.agendaCores.assunto}>{AJUDA.agendaCores.texto}</Ajuda></h1>
 
                         <button type="button" className="calendarioBotaoHoje" onClick={irParaHoje} title="Voltar para hoje">Hoje</button>
 
@@ -483,6 +485,7 @@ function Calendario() {
                                 <option value="inativos">Somente desativados</option>
                             </select>
                         </div>
+                        <Ajuda assunto={AJUDA.agendaSituacao.assunto}>{AJUDA.agendaSituacao.texto}</Ajuda>
 
                         <div className="calendarioBusca">
                             <img src={lupa} alt="" className="calendarioBuscaIcone" />
@@ -951,7 +954,7 @@ function Calendario() {
                             </div>
 
                             <div className="divLabelTop">
-                                <label htmlFor="processoId">Processo (opcional)</label>
+                                <label htmlFor="processoId">Processo (opcional)<Ajuda assunto={AJUDA.agendaProcesso.assunto}>{AJUDA.agendaProcesso.texto}</Ajuda></label>
                                 <FiltroDeOpcoes valor={filtroProcesso} onChange={setFiltroProcesso} total={processos.length} placeholder="Buscar processo pelo título ou número..." />
                                 <select id="processoId" name="processoId" className="select selectForm" value={form.processoId} onChange={handleFormChange}>
                                     <option value="">Nenhum</option>

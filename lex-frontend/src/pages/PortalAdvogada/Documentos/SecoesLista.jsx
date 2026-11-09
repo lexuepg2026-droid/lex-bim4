@@ -16,6 +16,8 @@ import { toast } from "../../../utils/toast";
 import { labelDe, TIPO_SECAO_OPTIONS } from "../../../utils/enums";
 
 import "./Documentos.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const EMPTY_SECAO = { titulo: "", tipo: "", texto: "" };
 
@@ -143,7 +145,7 @@ function SecoesLista() {
     return (
         <div className="financeiroSecao">
             <div className="financeiroSecaoCabecalho">
-                <h2 className="financeiroSubtitulo">Seções</h2>
+                <h2 className="financeiroSubtitulo">Seções<Ajuda assunto={AJUDA.secoes.assunto}>{AJUDA.secoes.texto}</Ajuda></h2>
                 <button title="Cadastrar um trecho de texto para usar nos modelos" type="button" className="button" onClick={abrirNovo}>+ Nova seção</button>
             </div>
 
@@ -169,7 +171,7 @@ function SecoesLista() {
             {carregando && secoes.length === 0 ? (
                 <p className="infoSecundariaDetalhe">Carregando...</p>
             ) : secoes.length === 0 ? (
-                !erro && <EmptyState titulo="Nenhuma seção encontrada." descricao="Ajuste a busca ou crie uma nova seção." />
+                !erro && <EmptyState titulo="Nenhuma seção encontrada." descricao="Ajuste a busca ou crie uma em &quot;+ Nova seção&quot;." />
             ) : (
                 <ul className="listaParcelas">
                     {secoes.map((secao) => (
@@ -234,7 +236,7 @@ function SecoesLista() {
                             </div>
 
                             <div className="divLabelTop">
-                                <label htmlFor="textoSecao">Texto</label>
+                                <label htmlFor="textoSecao">Texto<Ajuda assunto={AJUDA.secaoVariaveis.assunto}>{AJUDA.secaoVariaveis.texto}</Ajuda></label>
                                 <textarea
                                     ref={textoRef}
                                     id="textoSecao"

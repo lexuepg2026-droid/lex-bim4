@@ -7,6 +7,8 @@ import { getFinancialErrorMessage } from "../../../utils/financialErrors";
 import { formatDate, formatCurrency } from "../../../utils/formatters";
 import { toast } from "../../../utils/toast";
 import CampoDinheiro from "../../../components/CampoDinheiro/CampoDinheiro";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const ROTULO_ESTORNO = {
     total: "Estorno total",
@@ -85,7 +87,7 @@ export function EstornoModal({ pagamento, estorno, onFechar, onConcluido }) {
     return (
         <div className="modalOverlay" onClick={onFechar}>
             <div className="modalCaixa" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                <h2 className="modalTitulo">{ehAnulacao ? "Anular estorno" : "Estornar pagamento"}</h2>
+                <h2 className="modalTitulo">{ehAnulacao ? "Anular estorno" : "Estornar pagamento"}{ehAnulacao ? <Ajuda assunto={AJUDA.anularEstorno.assunto}>{AJUDA.anularEstorno.texto}</Ajuda> : <Ajuda assunto={AJUDA.estorno.assunto}>{AJUDA.estorno.texto}</Ajuda>}</h2>
 
                 <p className="infoSecundariaDetalhe">
                     Pagamento de {formatCurrency(pagamento.valor)} em {formatDate(pagamento.data)}
