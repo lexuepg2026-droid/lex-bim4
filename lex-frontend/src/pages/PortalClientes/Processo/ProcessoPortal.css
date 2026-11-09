@@ -90,7 +90,6 @@
 
 .botoesDocumentoPortal {
     display: flex;
-    flex-wrap: wrap;
     gap: 0.5rem;
 }
 
@@ -121,7 +120,6 @@
 
 .acoesCabecalhoPortal {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
 }
@@ -188,5 +186,10 @@
 
     .secaoPortal {
         padding: 1rem;
+    }
+
+    .botoesDocumentoPortal,
+    .acoesCabecalhoPortal {
+        flex-wrap: wrap;
     }
 }
