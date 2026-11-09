@@ -52,3 +52,11 @@ input.layoutPortal, .buttonConsultar, .buttonEsqueciSenhaPortal {
     font-size: 0.85rem;
     margin-top: 0.5rem;
 }
+/* Telas estreitas (DEC-170): o cartão ocupa a largura da tela e o padding encolhe.
+   Com 56vw e 3,2rem de padding, a 360 px sobravam 150 px para o texto. */
+@media (max-width: 600px) {
+    .cardPortal {
+        width: 100%;
+        padding: 1.5rem 1rem;
+    }
+}
