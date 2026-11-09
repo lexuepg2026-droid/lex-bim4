@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
 import lapis from "../../../assets/images/icons/lapis.svg";
@@ -68,7 +68,12 @@ function HonorariosLista() {
     const [campoComErro, setCampoComErro] = useState(null);
     const [modalExcluir, setModalExcluir] = useState({ aberto: false, id: null });
 
+    const ultimaBusca = useRef(0);
+
+    // Só a resposta da busca mais recente vale: com a rede lenta, a resposta de
+    // um filtro antigo chegava depois e sobrescrevia a lista (fase R2).
     const carregar = () => {
+        const numero = ++ultimaBusca.current;
         setCarregando(true);
         setErro("");
         feeService.listFees({
@@ -81,11 +86,16 @@ function HonorariosLista() {
             ate: ate || undefined,
         })
             .then((res) => {
+                if (numero !== ultimaBusca.current) return;
                 setHonorarios(res.data.data ?? res.data);
                 setTotalPaginas(res.data.totalPages ?? 1);
             })
-            .catch((err) => setErro(getFinancialErrorMessage(err, "Falha ao buscar honorários.")))
-            .finally(() => setCarregando(false));
+            .catch((err) => {
+                if (numero === ultimaBusca.current) setErro(getFinancialErrorMessage(err, "Falha ao buscar honorários."));
+            })
+            .finally(() => {
+                if (numero === ultimaBusca.current) setCarregando(false);
+            });
     };
 
     useEffect(() => {

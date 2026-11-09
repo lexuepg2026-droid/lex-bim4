@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import EmptyState from "../../../components/EmptyState/EmptyState";
 import ContextoDoProcesso from "../../../components/ContextoDoProcesso/ContextoDoProcesso";
@@ -53,7 +53,12 @@ function PagamentosLista() {
     const [estornoAlvo, setEstornoAlvo] = useState(null);
     const [observacoesAlvo, setObservacoesAlvo] = useState(null);
 
+    const ultimaBusca = useRef(0);
+
+    // Só a resposta da busca mais recente vale: com a rede lenta, a resposta de
+    // um filtro antigo chegava depois e sobrescrevia a lista (fase R2).
     const carregar = () => {
+        const numero = ++ultimaBusca.current;
         setCarregando(true);
         setErro("");
         paymentService.listPayments({
@@ -66,11 +71,16 @@ function PagamentosLista() {
             ate: ate || undefined,
         })
             .then((res) => {
+                if (numero !== ultimaBusca.current) return;
                 setPagamentos(res.data.data ?? res.data);
                 setTotalPaginas(res.data.totalPages ?? 1);
             })
-            .catch((err) => setErro(getFinancialErrorMessage(err, "Falha ao buscar pagamentos.")))
-            .finally(() => setCarregando(false));
+            .catch((err) => {
+                if (numero === ultimaBusca.current) setErro(getFinancialErrorMessage(err, "Falha ao buscar pagamentos."));
+            })
+            .finally(() => {
+                if (numero === ultimaBusca.current) setCarregando(false);
+            });
     };
 
     useEffect(() => {
