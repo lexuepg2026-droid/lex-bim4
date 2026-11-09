@@ -173,6 +173,31 @@ processo" estourava o botão). A R4 voltou o `width: 24rem` dela.
 Conferido a 360, 390 e 412 px, e a comparação do desktop com o original dela
 (DEC-171) dá diferença zero nas telas públicas.
 
+## DEC-172 — ajuda ao usuário (fase R5, 09/11/2026)
+
+Pedido dos professores: ajuda pensada de propósito nos pontos difíceis. Quatro
+peças, todas no estilo dela (tokens de `styles/global.css`, borda e raio dos
+cartões, ícone no traço dos dela) e sem mudar o resto da interface (DEC-171):
+
+1. **O "?" com balão:** `components/Ajuda/Ajuda.jsx`, ícone
+   `assets/images/icons/ajuda.svg`. `aria-label="Ajuda: <assunto>"`,
+   `aria-expanded`, `aria-controls`. Abre com clique, Enter ou Espaço; fecha
+   com Esc (o foco volta ao botão), clique fora ou o mesmo botão. O balão vai
+   para o `<body>` e nunca sai da tela (`posicao.js` vira para o outro lado;
+   no celular, no máximo a tela menos as margens). `TextoComAjuda` não deixa o
+   "?" sozinho numa linha; com `pendurado`, o "?" tem largura líquida zero (o
+   título do Extrato não quebra).
+2. **Texto de apoio embaixo do campo:** `<small className="notaCampo"
+   id="apoio-…">`, ligado ao campo por `aria-describedby` (há teste estático).
+3. **Estados vazios com o próximo passo:** o `EmptyState` dela, só o texto.
+4. **"Como usar"** em Configurações, ao lado de "Aparência".
+
+**Os textos são do Daniel** (`components/Ajuda/textos.js`, aprovados na R5) e
+**nenhum texto inventa regra:** cada regra descrita foi conferida no back, com
+arquivo e linha em `relatorios/AJUDA-TEXTOS.md`. Texto novo ou mudado passa
+pela mesma conferência e pela aprovação dele. Balão com até 3 frases (o
+"Resumo geral" do Início tem 4, por aprovação dele; o teste tem a exceção).
+
 ## DEC-171 — fidelidade visual (fase R4, 09/11/2026)
 
 **Decisão do Daniel**, depois de duas quebras em produção que a validação da R2
@@ -309,6 +334,15 @@ Trava: `tests/reativacao.test.js`.
 - Celular, só com `@media`: telas públicas em uma coluna, cabeçalho da Agenda,
   datas do Financeiro, e-mails longos nos detalhes do cliente.
 - DEC-171 nova; DEC-170 refeita.
+
+### Fase R5 — ajuda ao usuário (09/11/2026)
+
+- O "?" com balão nas telas da advogada e do portal, os textos de apoio
+  ligados por `aria-describedby`, os estados vazios com o próximo passo e a
+  página "Como usar" em Configurações (DEC-172).
+- Pendência registrada, sem mexer no back (peça protegida): regerar um
+  documento que **não** foi editado à mão cria um segundo documento e o
+  anterior continua na lista (`documentGenerationService.js:570` e `:633`).
 
 ### O que fica para a sessão 2
 
