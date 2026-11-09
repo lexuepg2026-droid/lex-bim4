@@ -105,13 +105,17 @@ export default Ajuda;
 
 // Para títulos longos: a última palavra e o "?" não se separam na quebra de
 // linha (o "?" sozinho numa linha nova parece solto).
-export function TextoComAjuda({ texto, assunto, children }) {
+//
+// pendurado: o "?" não ocupa largura na linha (margem negativa) e fica no
+// padding à direita. Serve para um título que já enche a linha, como o do
+// Extrato: o "?" não o faz quebrar e o tamanho do título não muda.
+export function TextoComAjuda({ texto, assunto, pendurado = false, children }) {
     const partes = String(texto ?? "").trimEnd().split(" ");
     const ultima = partes.pop();
     return (
         <>
             {partes.length > 0 && `${partes.join(" ")} `}
-            <span className="ajudaJunto">
+            <span className={pendurado ? "ajudaJunto ajudaPendurada" : "ajudaJunto"}>
                 {ultima}
                 <Ajuda assunto={assunto}>{children}</Ajuda>
             </span>

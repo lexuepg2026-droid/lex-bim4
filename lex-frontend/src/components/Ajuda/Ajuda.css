@@ -74,3 +74,17 @@
 .ajudaJunto {
     white-space: nowrap;
 }
+
+/* Largura líquida zero: 0.4rem de margem + 1rem do botão - 1.4rem = 0. */
+.ajudaPendurada .ajudaBotao {
+    margin-right: -1.4rem;
+}
+
+/* O título que leva o "?" pendurado avança 1.4rem sobre o padding do cartão
+   e devolve a mesma medida como padding: a caixa do texto (e a quebra) fica
+   igual, e o "?" cai dentro do padding do próprio título. A classe repetida
+   vence o "margin: 0 0 0.75rem" do .modalTitulo, que vem depois no CSS. */
+.tituloComAjudaPendurada.tituloComAjudaPendurada {
+    margin-right: -1.4rem;
+    padding-right: 1.4rem;
+}

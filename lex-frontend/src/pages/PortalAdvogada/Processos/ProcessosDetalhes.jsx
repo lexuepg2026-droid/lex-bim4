@@ -1305,7 +1305,7 @@ function ProcessosDetalhes() {
             {extrato && (
                 <div className="modalOverlay" onClick={fecharExtrato}>
                     <div className="modalCaixa" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                        <h2 className="modalTitulo"><TextoComAjuda texto={`Extrato — ${extrato.honorario.descricao}`} assunto={AJUDA.extrato.assunto}>{AJUDA.extrato.texto}</TextoComAjuda></h2>
+                        <h2 className="modalTitulo tituloComAjudaPendurada"><TextoComAjuda texto={`Extrato — ${extrato.honorario.descricao}`} assunto={AJUDA.extrato.assunto} pendurado>{AJUDA.extrato.texto}</TextoComAjuda></h2>
 
                         {extrato.carregando ? (
                             <p className="infoSecundariaDetalhe">Carregando...</p>
