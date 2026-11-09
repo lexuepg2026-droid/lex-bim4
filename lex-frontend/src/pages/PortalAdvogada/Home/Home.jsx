@@ -23,6 +23,7 @@ import { buscarTudo } from "../../../utils/buscarTudo";
 import { formatCurrency } from "../../../utils/formatters";
 import { toast } from "../../../utils/toast";
 import { getApiErrorMessage } from "../../../utils/apiError";
+import { dataDeCalendario, diaLocalDaquiA, prazoDaParcela, venceAte } from "../../../utils/datas";
 
 import "./Home.css";
 
@@ -101,18 +102,17 @@ const dataDeHoje = () => {
     return texto.charAt(0).toUpperCase() + texto.slice(1);
 };
 
-const rotuloDeVencimento = (dataVencimento) => {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    const vencimento = new Date(dataVencimento);
-    vencimento.setHours(0, 0, 0, 0);
-    const diferenca = Math.round((vencimento - hoje) / 86400000);
+// DEC-164: "processo · cliente" da parcela, com o processo resumido que
+// GET /installments já manda (DEC-102 do back).
+const contextoDaParcela = (parcela) => {
+    const processo = parcela.processo;
+    if (!processo) return "";
+    return [processo.titulo || processo.numeroProcesso, processo.clientePrincipalNome].filter(Boolean).join(" · ");
+};
 
-    if (diferenca < -1) return `Venceu há ${Math.abs(diferenca)} dias`;
-    if (diferenca === -1) return "Venceu ontem";
-    if (diferenca === 0) return "Vence hoje";
-    if (diferenca === 1) return "Vence amanhã";
-    return `Vence em ${diferenca} dias`;
+const rotaDaParcela = (parcela) => {
+    const processoId = parcela.processo?._id ?? parcela.processoId?._id ?? parcela.processoId;
+    return processoId ? `/processos/detalhes/${processoId}` : "/financeiro";
 };
 
 const formatCurrencyCompacto = (valor) =>
@@ -292,11 +292,8 @@ function Home() {
     }, [mes]);
 
     useEffect(() => {
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        const em7Dias = new Date(hoje);
-        em7Dias.setDate(em7Dias.getDate() + 7);
-        const ate = `${em7Dias.getFullYear()}-${String(em7Dias.getMonth() + 1).padStart(2, "0")}-${String(em7Dias.getDate()).padStart(2, "0")}`;
+        // Datas de calendário, e não instantes no fuso do navegador (DEC-165).
+        const ate = diaLocalDaquiA(7);
 
         buscarTudo(installmentService.listInstallments, { ate })
             .then((todas) => {
@@ -304,9 +301,9 @@ function Home() {
                     .filter((parcela) => {
                         if (parcela.status === "vencido") return true;
                         if (parcela.status !== "pendente") return false;
-                        return new Date(parcela.dataVencimento) <= em7Dias;
+                        return venceAte(parcela.dataVencimento, 7);
                     })
-                    .sort((a, b) => new Date(a.dataVencimento) - new Date(b.dataVencimento));
+                    .sort((a, b) => (dataDeCalendario(a.dataVencimento) ?? "").localeCompare(dataDeCalendario(b.dataVencimento) ?? ""));
 
                 setParcelasUrgentes(urgentes);
                 setParcelasCarregadas(true);
@@ -460,18 +457,27 @@ function Home() {
                         <ul className="homeListaParcelas">
                             {parcelasVisiveis.map((parcela) => (
                                 <li key={parcela._id} className="homeItemParcelaUrgente">
-                                    <div className="homeItemCorpo">
-                                        <span className="homeItemTitulo" title={parcela.feeId?.descricao}>
-                                            {parcela.feeId?.descricao ?? "Honorário"}
-                                        </span>
-                                        <span className="homeItemSubtitulo">
-                                            Parcela {parcela.numeroParcela} · {rotuloDeVencimento(parcela.dataVencimento)}
-                                        </span>
-                                    </div>
-                                    <div className="homeItemDireita">
-                                        <span className="homeItemValor">{formatCurrency(parcela.valor)}</span>
-                                        <StatusBadge status={parcela.status} />
-                                    </div>
+                                    {/* DEC-164: a linha inteira leva ao processo da parcela, e diz
+                                        processo e cliente. */}
+                                    <Link to={rotaDaParcela(parcela)} className="homeItemLinkParcela">
+                                        <div className="homeItemCorpo">
+                                            <span className="homeItemTitulo" title={parcela.feeId?.descricao}>
+                                                {parcela.feeId?.descricao ?? "Honorário"}
+                                            </span>
+                                            <span className="homeItemSubtitulo">
+                                                Parcela {parcela.numeroParcela} · {prazoDaParcela(parcela.dataVencimento)}
+                                            </span>
+                                            {contextoDaParcela(parcela) && (
+                                                <span className="homeItemSubtitulo" title={contextoDaParcela(parcela)}>
+                                                    {contextoDaParcela(parcela)}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="homeItemDireita">
+                                            <span className="homeItemValor">{formatCurrency(parcela.valor)}</span>
+                                            <StatusBadge status={parcela.status} />
+                                        </div>
+                                    </Link>
                                 </li>
                             ))}
                         </ul>
