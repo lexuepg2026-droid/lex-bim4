@@ -33,7 +33,7 @@ const LIMITE_PARCELAS = 6;
 const CARTOES = [
     { chave: "processosAtivos", label: "Processos ativos", rota: "/processos", icone: documento, cor: "primary" },
     { chave: "clientesCadastrados", label: "Clientes cadastrados", rota: "/clientes", icone: pessoa, cor: "primary" },
-    { chave: "honorariosAReceber", label: "Honorários a receber", rota: "/financeiro", icone: dinheiro, cor: "warning" },
+    { chave: "honorariosAReceber", label: "Honorários em aberto", rota: "/financeiro", icone: dinheiro, cor: "warning" },
     { chave: "parcelasVencidas", label: "Parcelas vencidas", rota: "/financeiro", icone: relogio, cor: "danger" },
     { chave: "documentosCadastrados", label: "Documentos cadastrados", rota: "/documentos", icone: folder, cor: "neutral" },
     { chave: "confirmacoesNaoVistas", label: "Confirmações novas", rota: null, icone: sino, cor: "info" },
