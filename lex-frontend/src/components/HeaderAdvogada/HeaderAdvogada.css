@@ -160,6 +160,15 @@ body:has(.botaoVoltar) .headerLogo {
     background-color: var(--vermelho40);
 }
 
+/* Entre 1201 e 1365 px, nas telas com "Voltar", o logo encostava no botão
+   (16 px de sobreposição a 1280; o defeito já existia no original dela). Só
+   ali o espaço entre logo e menu diminui; o menu fica no mesmo lugar (R4). */
+@media (min-width: 1201px) and (max-width: 1365px) {
+    body:has(.botaoVoltar) .headerAdvogada {
+        gap: 8rem;
+    }
+}
+
 @media (max-width: 1200px) {
     .headerAdvogada {
         gap: 2rem;
