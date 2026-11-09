@@ -1,0 +1,74 @@
+.modalOverlay {
+    position: fixed;
+    inset: 0;
+    
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    background-color: var(--preto50);
+    
+    padding: 1rem;
+    z-index: 100;
+}
+
+.modalCaixa {
+    background-color: var(--cinzaClaro);
+    border-radius: 0.8rem;
+    
+    width: 100%;
+    max-width: 32rem;
+    padding: 1.5rem 1.8rem;
+    
+    color: var(--bege);
+    
+    box-shadow: 0 0 10px 5px rgba(0, 0, 0, 0.25);
+}
+
+.modalTitulo {
+    margin: 0 0 0.75rem;
+    
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.modalMensagem {
+    color: var(--bege70);
+    
+    margin: 0;
+    white-space: pre-line;
+}
+
+.modalAcoes {
+    display: flex;
+    justify-content: flex-end;
+    
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.modalBotao {
+    height: 2.75rem;
+    
+    padding: 0 1.5rem;
+}
+
+.modalBotaoPerigo {
+    background-color: var(--vermelhoEscuro);
+    color: #FFFFFF;
+    font-weight: 600;
+    
+    border: none;
+    border-radius: 2rem;
+    
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.modalBotaoPerigo:hover:enabled {
+    background-color: var(--vermelho);
+}

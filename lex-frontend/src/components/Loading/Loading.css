@@ -1,0 +1,23 @@
+.loadingWrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    width: 100%;
+    min-height: calc(100vh - 105px);
+}
+
+.loadingSpinner {
+    width: 2.5rem;
+    height: 2.5rem;
+
+    border: 3px solid var(--bege10);
+    border-top-color: var(--bege);
+    border-radius: 50%;
+    
+    animation: girar 0.8s linear infinite;
+}
+
+@keyframes girar {
+    to { transform: rotate(360deg); }
+}

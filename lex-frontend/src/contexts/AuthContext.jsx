@@ -1,128 +1,87 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import authService from '../api/authService';
+
+import authService from '../services/authService';
 import { registrarSessao } from '../api/sessionLoss';
+import { limparDadosDoUsuario } from '../utils/dadosDoUsuario';
 import { startSession, clearAll } from '../offline/offlineCache';
 import { registrarUsuarioAtual } from '../offline/currentUser';
-import { limparDispensaDoAviso } from '../components/layout/confirmacaoEmail.js';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate();
+    const [user, setUser] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-  // ── Quem sabe se há sessão é este contexto (DEC-050) ────────────────────
-  // O interceptor de `api/axiosConfig.js` só desloga em 401 se havia sessão a
-  // perder, e é daqui que ele recebe a resposta (via `api/sessionLoss.js`). Manter as duas coisas juntas
-  // — o estado do usuário e o aviso ao interceptor — é o que impede elas de
-  // divergirem: toda transição de sessão passa por uma destas funções.
-  const registrarUsuario = useCallback((usuario) => {
-    setUser(usuario);
-    registrarSessao(Boolean(usuario));
-    // ── F-5b: o interceptor precisa saber de quem é a gravação ──────────
-    //
-    // Entrada de fila é escopada por usuário (DEC-058), e quem enfileira é o
-    // interceptor de `api/axiosConfig.js`, que não é componente e não pode
-    // chamar `useAuth`. Fica aqui, na mesma função por onde toda transição de
-    // sessão passa, pela mesma razão que `registrarSessao` está: separá-los
-    // seria criar duas verdades sobre quem está logado.
-    registrarUsuarioAtual(usuario?.id ?? null);
-  }, []);
+    const navigate = useNavigate();
 
-  // /auth/me, /auth/login e /auth/register devolvem o mesmo envelope
-  // `{ usuario }` desde a Fase 2D.1 — não há mais exceção por endpoint.
-  // ── O ESPELHO LOCAL É ESCOPADO, E A LIMPEZA VEM ANTES (DEC-058, F-5a) ───
-  //
-  // `startSession` apaga do IndexedDB tudo que NÃO é deste usuário, e roda
-  // **antes** de `registrarUsuario` — quem registra o usuário dispara a
-  // navegação, a navegação renderiza a tela e a tela grava. Limpar depois seria
-  // limpar por cima do que a sessão nova já escreveu.
-  //
-  // Ele é chamado nos DOIS caminhos de entrada porque só um deles é o login: o
-  // recarregar de página entra por `checkAuth`, com o cookie que já existia, e
-  // é exatamente o caminho de quem senta no computador do escritório e abre o
-  // sistema sem passar pela tela de login.
-  const checkAuth = useCallback(async () => {
-    try {
-      const res = await authService.getMe();
-      await startSession(res.data.usuario?.id);
-      registrarUsuario(res.data.usuario);
-    } catch {
-      // 401 aqui é o estado NORMAL de quem ainda não entrou, e é por isso que o
-      // interceptor precisa saber que não havia sessão: sem isso, abrir o app
-      // deslogada mandaria para `/login` com um "Sessão expirada" no caminho —
-      // e em `/registrar` interromperia o cadastro.
-      registrarUsuario(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [registrarUsuario]);
+    const registrarUsuario = useCallback((usuario) => {
+        setUser(usuario);
+        registrarSessao(Boolean(usuario));
+        registrarUsuarioAtual(usuario?._id ?? usuario?.id ?? null);
+    }, []);
 
-  const login = useCallback(async (email, senha) => {
-    const res = await authService.login(email, senha);
-    // Fase 2b (DEC-088): o "Dispensar" do aviso de e-mail vale até o próximo
-    // LOGIN — e este é o login. O recarregar de página (`checkAuth`) não limpa.
-    limparDispensaDoAviso();
-    await startSession(res.data.usuario?.id);
-    registrarUsuario(res.data.usuario);
-  }, [registrarUsuario]);
+    const idDe = (usuario) => usuario?._id ?? usuario?.id ?? null;
 
-  // O cadastro já volta autenticado: o backend emite o cookie `lex-token` na
-  // mesma resposta. Registrar o usuário no estado aqui é o que leva a advogada
-  // direto ao sistema, em vez de devolvê-la à tela de login.
-  const register = useCallback(async (payload) => {
-    const res = await authService.register(payload);
-    await startSession(res.data.usuario?.id);
-    registrarUsuario(res.data.usuario);
-    return res.data.usuario;
-  }, [registrarUsuario]);
+    const checkAuth = useCallback(async () => {
+        try {
+            const res = await authService.getMe();
+            await startSession(idDe(res.data.usuario));
+            registrarUsuario(res.data.usuario);
+            return res.data.usuario;
+        } catch {
+            registrarUsuario(null);
+            return null;
+        } finally {
+            setIsLoading(false);
+        }
+    }, [registrarUsuario]);
 
-  const logout = useCallback(async () => {
-    try {
-      await authService.logout();
-    } catch {
-      // Falha na chamada de logout não impede a limpeza local da sessão.
-    } finally {
-      // ⚠️ O LOGOUT APAGA TUDO (DEC-058). Não marca como inválido, não expira,
-      // não filtra na leitura: apaga. Sair da conta num computador emprestado
-      // — o do escritório, o da estagiária — precisa deixar o navegador limpo,
-      // e um dado "invalidado" que continua no disco continua sendo o dado.
-      //
-      // Fica no `finally` junto com o resto da limpeza local pela mesma razão
-      // que `registrarUsuario(null)` está aqui: falha na chamada de logout não
-      // pode deixar o espelho local para trás.
-      await clearAll();
-      registrarUsuario(null);
-      navigate('/login');
-    }
-  }, [navigate, registrarUsuario]);
+    const login = useCallback(async (email, senha) => {
+        const res = await authService.login(email, senha);
+        limparDadosDoUsuario();
+        await startSession(idDe(res.data.usuario));
+        registrarUsuario(res.data.usuario);
+    }, [registrarUsuario]);
 
-  // Substitui o user no estado (ex.: após salvar o perfil) para o Header
-  // refletir imediatamente sem novo GET /me. A sessão continua a mesma — é o
-  // conteúdo dela que mudou —, e por isso passa pelo mesmo caminho.
-  const updateUser = useCallback((usuario) => {
-    registrarUsuario(usuario);
-  }, [registrarUsuario]);
+    const register = useCallback(async (payload) => {
+        const res = await authService.register(payload);
+        limparDadosDoUsuario();
+        await startSession(idDe(res.data.usuario));
+        registrarUsuario(res.data.usuario);
+        return res.data.usuario;
+    }, [registrarUsuario]);
 
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    const logout = useCallback(async () => {
+        try {
+            await authService.logout();
+        } catch {
+            return;
+        } finally {
+            limparDadosDoUsuario();
+            await clearAll();
+            registrarUsuario(null);
+            navigate('/login');
+        }
+    }, [navigate, registrarUsuario]);
 
-  const isAuthenticated = !!user;
+    const updateUser = useCallback((usuario) => {
+        registrarUsuario(usuario);
+    }, [registrarUsuario]);
 
-  return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated, checkAuth, login, register, logout, updateUser }}>
-      {children}
-    </AuthContext.Provider>
-  );
+    useEffect(() => {
+        checkAuth();
+    }, [checkAuth]);
+
+    const isAuthenticated = !!user;
+
+    return (
+        <AuthContext.Provider value={{ user, isLoading, isAuthenticated, checkAuth, login, register, logout, updateUser }}>
+            {children}
+        </AuthContext.Provider>
+    );
 }
 
-// O hook mora junto do provider por ser a interface de consumo dele; separá-lo
-// só para satisfazer a regra criaria um arquivo sem outra razão de existir. O
-// custo é perder o fast refresh neste arquivo — aceitável, ele quase não muda.
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
-  return useContext(AuthContext);
+    return useContext(AuthContext);
 }

@@ -1,0 +1,586 @@
+.telaProcessos {
+    flex-direction: column;
+    min-height: calc(100vh - 105px);
+}
+
+h1.processos {
+    font-size: 1.5rem;
+
+    display: flex;
+    align-items: center;
+}
+
+.contadorProcessos {
+    margin-top: 3px;
+    margin-left: 10px;
+
+    color: var(--bege70);
+    font-weight: 400;
+    font-size: 1rem;
+}
+
+.inputProcessoBuscar {
+    width: 100%;
+}
+
+.inputProcessoBuscar:focus {
+    outline: none;
+    border: none;
+}
+
+.inputProcessoBuscar::placeholder {
+    font-size: 0.8rem;
+    color: var(--bege87);
+    font-weight: 500;
+}
+
+.novoProcesso {
+    display: flex;
+
+    font-size: 1.5rem;
+    width: 50px;
+    height: 40px;
+
+    padding-left: 6px;
+
+    color: var(--bege87);
+}
+
+.novoProcesso:hover {
+    color: var(--bege);
+    background-color: var(--bege10);
+
+    border-radius: 50%;
+}
+
+.checkBoxProcesso {
+    display: flex;
+    align-items: center;
+    justify-content: left;
+}
+
+.checkBoxProcessoConteudo {
+    position: relative;
+
+    display: flex;
+    align-items: center;
+    justify-content: left;
+
+    width: 2.25rem;
+    height: 2.25rem;
+
+    margin-right: 25px;
+}
+
+.linhaFiltros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.linhaFiltros .select {
+    flex: 1;
+    min-width: 12rem;
+}
+
+.avatarProcesso {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    transform: translate(-50%, -50%);
+}
+
+.checkBoxProcesso input[type="checkbox"], .checkboxMestre input {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+
+    width: 18px;
+    height: 18px;
+
+    margin: 0;
+
+    appearance: none;
+    border: 1.5px solid var(--bege87);
+    border-radius: 10%;
+    display: inline-grid;
+    place-content: center;
+
+    cursor: pointer;
+    z-index: 1;
+}
+
+.checkBoxProcesso input[type="checkbox"] {
+    opacity: 0;
+}
+
+.tabela tbody tr:hover .avatarProcesso {
+    opacity: 0;
+}
+.tabela tbody tr:hover .checkBoxProcessoConteudo input {
+    opacity: 1;
+}
+
+.tabela tbody tr.linhaSelecionada .avatarProcesso {
+    opacity: 0;
+}
+.tabela tbody tr.linhaSelecionada .checkBoxProcessoConteudo input {
+    opacity: 1;
+}
+
+.tabela--modoSelecao tbody .avatarProcesso {
+    opacity: 0;
+}
+.tabela--modoSelecao tbody .checkBoxProcessoConteudo input {
+    opacity: 1;
+}
+
+.listaProcessos {
+    margin-top: 0.75rem;
+}
+
+.itemProcesso {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 5px;
+
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 16px;
+
+    padding: 0.75rem 0.75rem;
+    cursor: pointer;
+}
+
+.itemProcesso:hover {
+    background-color: var(--bege10);
+}
+
+.setaProcesso {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 1.2rem;
+    height: 1.2rem;
+
+    transition: transform 0.15s ease;
+}
+
+.setaProcesso::before {
+    content: "";
+
+    width: 0.45rem;
+    height: 0.45rem;
+
+    border-right: 2px solid var(--bege);
+    border-bottom: 2px solid var(--bege);
+
+    transform: rotate(-45deg);
+    margin-left: -2px;
+}
+
+.setaProcessoAberta {
+    transform: rotate(90deg);
+}
+
+.processoTitulo {
+    flex: 1;
+    text-align: left;
+    color: var(--bege);
+    font-weight: 600;
+}
+
+.contadorQuantidadeProcesso {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.4rem;
+
+    background-color: rgba(76, 175, 80, 0.2);
+    color: var(--verdeStatus);
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 1rem;
+}
+
+[data-theme="light"] .contadorQuantidadeProcesso {
+    color: #1B5E20;
+}
+
+.detalheItemProcesso.detalheItemClicavel:hover {
+    background-color: var(--bege10);
+}
+
+.tagDesativado {
+    background-color: var(--vermelho10);
+    color: var(--vermelhoTexto);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 1rem;
+    margin-left: 0.75rem;
+}
+
+.botaoReativar {
+    height: 2.25rem;
+    padding: 0 1rem;
+    font-size: 0.8rem;
+}
+
+.listaParticipantes {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-bottom: 1.25rem;
+}
+
+.itemParticipante {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+
+    background-color: var(--cinzaClaro80);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+}
+
+.itemParticipanteInfo {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.nomeParticipante {
+    color: var(--bege);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.badgePrincipal {
+    background-color: var(--bege);
+    color: var(--cinzaEscuro);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 1rem;
+}
+
+.infoSecundariaDetalhe {
+    color: var(--bege70);
+    font-size: 0.8rem;
+}
+
+.selectPapel select {
+    height: 2.5rem;
+    font-size: 0.85rem;
+}
+
+.botaoAcaoParticipante {
+    height: 2.5rem;
+    padding: 0 1rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.formNovoParticipante {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.formNovoParticipante .select {
+    min-width: 12rem;
+}
+
+.formNovoParticipante button {
+    height: 2.75rem;
+    padding: 0 1.5rem;
+}
+
+.listaLinhaDoTempo {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.itemLinhaDoTempo {
+    display: flex;
+    gap: 1rem;
+
+    color: var(--bege);
+    font-size: 0.9rem;
+
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--bege10);
+}
+
+.dataLinhaDoTempo {
+    color: var(--bege70);
+    min-width: 5.5rem;
+}
+
+.listaParcelas {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--bege10);
+}
+
+.itemParcela {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+
+    color: var(--bege87);
+    font-size: 0.85rem;
+
+    padding: 0.3rem 0;
+}
+
+.campoCheckbox label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    color: var(--bege87);
+    cursor: pointer;
+}
+
+.campoCheckbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.campoAcaoFase {
+    justify-content: flex-end;
+}
+
+.campoAcaoFase button {
+    height: 3.5rem;
+}
+
+.financeiroDetalheTopo {
+    display: flex;
+    justify-content: flex-end;
+
+    margin-bottom: 1rem;
+}
+
+.financeiroDetalheTopo .button {
+    height: 2.75rem;
+    padding: 0 1.25rem;
+    white-space: nowrap;
+}
+
+.detalheCardFinanceiroCabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    margin-bottom: 0.5rem;
+}
+
+.detalheCardFinanceiroCabecalho h4 {
+    margin: 0;
+}
+
+.input-erro {
+    border-color: var(--vermelho) !important;
+}
+
+.financeiroBotoesHonorario {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+
+    margin-top: 0.75rem;
+}
+
+.liberacaoPortal {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+}
+
+.liberacaoPortalControle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    background: none;
+    border: none;
+    padding: 0;
+
+    color: var(--bege70);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.liberacaoPortalControle:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.liberacaoPortalTrilho {
+    position: relative;
+    display: inline-block;
+    width: 2.2rem;
+    height: 1.2rem;
+
+    background-color: var(--bege20);
+    border-radius: 1rem;
+    transition: background-color 0.2s;
+}
+
+.liberacaoPortalBotao {
+    position: absolute;
+    top: 0.15rem;
+    left: 0.15rem;
+    width: 0.9rem;
+    height: 0.9rem;
+
+    background-color: var(--bege);
+    border-radius: 50%;
+    transition: left 0.2s;
+}
+
+.liberacaoPortalControle--sim {
+    color: var(--verdeStatus);
+}
+
+.liberacaoPortalControle--sim .liberacaoPortalTrilho {
+    background-color: var(--verdeStatus);
+}
+
+.liberacaoPortalControle--sim .liberacaoPortalBotao {
+    left: 1.15rem;
+}
+
+.liberacaoPortalConfirmacao {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.entregaAcesso {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+
+    border-top: 1px solid var(--bege10);
+    padding-top: 0.75rem;
+    margin-top: 0.25rem;
+
+    color: var(--bege87);
+    font-size: 0.85rem;
+}
+
+.entregaAcessoCabecalho {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+
+    color: var(--bege);
+}
+
+.entregaAcessoAviso {
+    background-color: var(--bege5);
+    border-left: 3px solid var(--amareloStatus);
+    border-radius: 6px;
+    padding: 0.6rem 0.75rem;
+    line-height: 1.5;
+}
+
+.entregaAcessoCodigo {
+    color: var(--bege);
+    font-family: monospace;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.15rem;
+}
+
+.acoesEntregaAcesso {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.entregaAcessoPrevia {
+    background-color: var(--cinzaEscuro);
+    border: 1px solid var(--bege10);
+    border-radius: 8px;
+    padding: 0.75rem;
+
+    color: var(--bege70);
+    font-family: inherit;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.confirmacoesProcesso {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+}
+
+.listaConfirmacoes {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.itemConfirmacao {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+
+    background-color: var(--cinzaClaro80);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+}
+
+.itemPagamento {
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.itemPagamento .estornosLista,
+.itemPagamento .observacaoPagamento {
+    flex-basis: 100%;
+}

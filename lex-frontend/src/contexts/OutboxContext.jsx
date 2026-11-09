@@ -1,116 +1,106 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+
 import { useAuth } from './AuthContext';
 import useOnlineStatus from '../hooks/useOnlineStatus';
-import { listarFila, enviarFila, tentarDeNovo, descartar } from '../offline/outbox';
+import { listarFila, enviarFila, tentarDeNovo, descartar, manterMinhaVersao } from '../offline/outbox';
 import { enviarEntrada } from '../api/outboxSender';
 import { contarFalhas, filaTravada } from '../offline/outboxPlan';
-import { aoMudarFila } from '../offline/outboxEvents.js';
-
-// ═══════════════════════════════════════════════════════════════════════════
-// A FILA NA TELA — um estado só, para o app inteiro (F-5b, Parte 4)
-//
-// Contexto, e não um hook por tela, por uma razão de comportamento: o reenvio
-// dispara **quando o sinal volta**, e com um hook por tela cada tela montada
-// dispararia o seu. Duas rodadas simultâneas mandariam a mesma entrada duas
-// vezes — a idempotência do servidor seguraria a duplicação, mas o certo é não
-// depender dela para um defeito que é nosso.
-//
-// Quem consome: o contador ao lado do sino, a tela de pendências, o aviso do
-// logout e as telas que precisam dizer "há alteração não enviada aqui".
-// ═══════════════════════════════════════════════════════════════════════════
+import { aoMudarFila } from '../offline/outboxEvents';
+import { toast } from '../utils/toast';
 
 const OutboxContext = createContext(null);
 
 export function OutboxProvider({ children }) {
-  const { user } = useAuth();
-  const userId = user?.id ?? null;
-  const online = useOnlineStatus();
+    const { user } = useAuth();
+    const userId = user?._id ?? user?.id ?? null;
+    const online = useOnlineStatus();
 
-  const [entradas, setEntradas] = useState([]);
-  const [enviando, setEnviando] = useState(false);
-  // `useRef` e não estado: o guarda de reentrância não pode causar render, e
-  // precisa valer no MESMO tick em que a segunda chamada chega.
-  const emCurso = useRef(false);
+    const [estado, setEstado] = useState({ dono: null, lista: [] });
+    const [enviando, setEnviando] = useState(false);
+    const emCurso = useRef(false);
 
-  const recarregar = useCallback(async () => {
-    if (!userId) {
-      setEntradas([]);
-      return [];
-    }
-    const fila = await listarFila(userId);
-    setEntradas(fila);
-    return fila;
-  }, [userId]);
+    const recarregar = useCallback(async () => {
+        if (!userId) return [];
+        const fila = await listarFila(userId);
+        setEstado({ dono: userId, lista: fila });
+        return fila;
+    }, [userId]);
 
-  const enviar = useCallback(async () => {
-    if (!userId || emCurso.current) return null;
-    emCurso.current = true;
-    setEnviando(true);
-    try {
-      const resultado = await enviarFila({ userId, enviar: enviarEntrada });
-      await recarregar();
-      return resultado;
-    } finally {
-      emCurso.current = false;
-      setEnviando(false);
-    }
-  }, [userId, recarregar]);
+    const enviar = useCallback(async () => {
+        if (!userId || emCurso.current) return null;
+        emCurso.current = true;
+        setEnviando(true);
+        try {
+            const resultado = await enviarFila({ userId, enviar: enviarEntrada });
+            await recarregar();
+            if (resultado.enviadas.length > 0) {
+                toast.success(resultado.enviadas.length === 1
+                    ? "1 alteração feita sem conexão foi enviada."
+                    : `${resultado.enviadas.length} alterações feitas sem conexão foram enviadas.`);
+            }
+            if (resultado.bloqueio && resultado.bloqueio.falha.classificacao !== "semSinal") {
+                toast.error("Uma alteração feita sem conexão não pôde ser enviada. Veja em Pendências.");
+            }
+            return resultado;
+        } finally {
+            emCurso.current = false;
+            setEnviando(false);
+        }
+    }, [userId, recarregar]);
 
-  useEffect(() => { recarregar(); }, [recarregar]);
+    useEffect(() => {
+        if (!userId) return;
+        listarFila(userId).then((fila) => setEstado({ dono: userId, lista: fila }));
+    }, [userId]);
 
-  // Fase 3.4 (DEC-113): o interceptor enfileira sem passar por aqui. O aviso
-  // de `outboxEvents` faz qualquer tela (detalhe do processo, compromisso…)
-  // mostrar a pendência na hora, e não na próxima recarga. Só a fila de quem
-  // está logado interessa.
-  useEffect(() => aoMudarFila((quem) => {
-    if (!quem || quem === userId) recarregar();
-  }), [userId, recarregar]);
+    const entradas = estado.dono === userId ? estado.lista : [];
 
-  // ── O gatilho automático: quando o sinal VOLTA ────────────────────────
-  //
-  // Sem gesto nenhum da advogada. Ela guardou o compromisso no fórum, saiu do
-  // subsolo, e a fila sobe sozinha — que é a única forma de a fila não virar
-  // mais uma coisa para lembrar de fazer.
-  useEffect(() => {
-    if (online && userId) enviar();
-  }, [online, userId, enviar]);
+    useEffect(() => aoMudarFila((quem) => {
+        if (!quem || quem === userId) recarregar();
+    }), [userId, recarregar]);
 
-  const acaoTentarDeNovo = useCallback(async (id) => {
-    await tentarDeNovo(userId, id);
-    await recarregar();
-    return enviar();
-  }, [userId, recarregar, enviar]);
+    useEffect(() => {
+        if (online && userId) enviar();
+    }, [online, userId, enviar]);
 
-  // O descarte é o ÚNICO caminho pelo qual trabalho da advogada some. Ele só
-  // existe aqui porque a tela pergunta antes, nomeando o que se perde.
-  const acaoDescartar = useCallback(async (id) => {
-    await descartar(userId, id);
-    return recarregar();
-  }, [userId, recarregar]);
+    const acaoTentarDeNovo = useCallback(async (id) => {
+        await tentarDeNovo(userId, id);
+        await recarregar();
+        return enviar();
+    }, [userId, recarregar, enviar]);
 
-  const valor = {
-    entradas,
-    quantidade: entradas.length,
-    falhas: contarFalhas(entradas),
-    travada: filaTravada(entradas),
-    enviando,
-    online,
-    recarregar,
-    enviar,
-    tentarDeNovo: acaoTentarDeNovo,
-    descartar: acaoDescartar
-  };
+    const acaoDescartar = useCallback(async (id) => {
+        await descartar(userId, id);
+        return recarregar();
+    }, [userId, recarregar]);
 
-  return <OutboxContext.Provider value={valor}>{children}</OutboxContext.Provider>;
+    const acaoManterMinha = useCallback(async (id) => {
+        await manterMinhaVersao(userId, id);
+        await recarregar();
+        return enviar();
+    }, [userId, recarregar, enviar]);
+
+    const valor = {
+        entradas,
+        quantidade: entradas.length,
+        falhas: contarFalhas(entradas),
+        travada: filaTravada(entradas),
+        enviando,
+        online,
+        recarregar,
+        enviar,
+        tentarDeNovo: acaoTentarDeNovo,
+        descartar: acaoDescartar,
+        manterMinhaVersao: acaoManterMinha,
+    };
+
+    return <OutboxContext.Provider value={valor}>{children}</OutboxContext.Provider>;
 }
 
-// O hook mora junto do provider por ser a interface de consumo dele — mesma
-// razão registrada em `AuthContext.jsx`.
-// eslint-disable-next-line react-refresh/only-export-components
 export function useOutbox() {
-  return useContext(OutboxContext) ?? {
-    entradas: [], quantidade: 0, falhas: 0, travada: false, enviando: false,
-    online: true, recarregar: async () => {}, enviar: async () => null,
-    tentarDeNovo: async () => {}, descartar: async () => {}
-  };
+    return useContext(OutboxContext) ?? {
+        entradas: [], quantidade: 0, falhas: 0, travada: false, enviando: false,
+        online: true, recarregar: async () => [], enviar: async () => null,
+        tentarDeNovo: async () => {}, descartar: async () => {}, manterMinhaVersao: async () => {},
+    };
 }

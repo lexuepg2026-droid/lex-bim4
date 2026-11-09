@@ -1,93 +1,184 @@
-*, *::before, *::after {
-  box-sizing: border-box;
+@import "./buttons.css";
+@import "./inputs.css";
+@import "./select.css";
+
+:root,
+[data-theme="light"] .headerAdvogada,
+[data-theme="light"] body:has(.headerAdvogada) .botaoVoltar {
+    --verdeEscuro: #01261F;
+    --verdeClaro: #174034;
+
+    --bege: #EDE3CF;
+    --bege87: rgba(237, 227, 207, 0.87);
+    --bege70: rgba(237, 227, 207, 0.7);
+    --bege60: rgba(237, 227, 207, 0.6);
+    --bege50: rgba(237, 227, 207, 0.5);
+    --bege40: rgba(237, 227, 207, 0.4);
+    --bege38: rgba(237, 227, 207, 0.38);
+    --bege30: rgba(237, 227, 207, 0.3);
+    --bege20: rgba(237, 227, 207, 0.2);
+    --bege10: rgba(237, 227, 207, 0.1);
+    --bege5: rgba(237, 227, 207, 0.05);
+
+    --cinzaEscuro: #121212;
+
+    --cinzaClaro: #222222;
+    --cinzaClaro80: rgba(34, 34, 34, 0.8);
+    --cinzaClaro10: rgba(34, 34, 34, 0.1);
+
+    --vermelho: rgba(180, 0, 0, 1);
+    --vermelho40: rgba(180, 0, 0, 0.40);
+    --vermelho10: rgba(180, 0, 0, 0.1);
+    --vermelhoTexto: #FF6B6B;
+
+    --vermelhoEscuro: rgba(130, 0, 0, 1);
+
+    --preto: rgba(0, 0, 0, 1);
+    --preto50: rgba(0, 0, 0, 0.5);
+
+    --branco: rgb(255, 255, 255, 1);
+    --branco70: rgb(255, 255, 255, 0.7);
+    --branco60: rgb(255, 255, 255, 0.6);
+    --branco50: rgb(255, 255, 255, 0.5);
+    --branco40: rgb(255, 255, 255, 0.4);
+    --branco30: rgb(255, 255, 255, 0.3);
+    --branco20: rgb(255, 255, 255, 0.2);
+    --branco10: rgb(255, 255, 255, 0.1);
+
+    --verdeStatus: #7BD389;
+    --amareloStatus: #FFD466;
+    --vermelhoStatus: #FF8A80;
+    --azulStatus: #82B1FF;
+
+    --cinzaMenu: #2c2c2c;
+
+    --esquemaCor: dark;
 }
 
-html,
+[data-theme="light"] {
+    --verdeEscuro: #F3EDE1;
+    --verdeClaro: #E4DAC5;
+
+    --bege: #1F2D28;
+    --bege87: rgba(31, 45, 40, 0.87);
+    --bege70: rgba(31, 45, 40, 0.7);
+    --bege60: rgba(31, 45, 40, 0.6);
+    --bege50: rgba(31, 45, 40, 0.5);
+    --bege40: rgba(31, 45, 40, 0.4);
+    --bege38: rgba(31, 45, 40, 0.38);
+    --bege30: rgba(31, 45, 40, 0.3);
+    --bege20: rgba(31, 45, 40, 0.2);
+    --bege10: rgba(31, 45, 40, 0.1);
+    --bege5: rgba(31, 45, 40, 0.05);
+
+    --cinzaEscuro: #F5F2EC;
+
+    --cinzaClaro: #FFFFFF;
+    --cinzaClaro80: rgba(255, 255, 255, 0.8);
+    --cinzaClaro10: rgba(255, 255, 255, 0.1);
+
+    --vermelhoTexto: #C62828;
+
+    --verdeStatus: #2E7D32;
+    --amareloStatus: #A86B00;
+    --vermelhoStatus: #B71C1C;
+    --azulStatus: #1565C0;
+
+    --cinzaMenu: #FFFFFF;
+
+    --esquemaCor: light;
+}
+
+[data-theme="light"] img[src$=".svg"],
+[data-theme="light"] img[src^="data:image/svg"] {
+    filter: brightness(0.25);
+}
+
+[data-theme="light"] .headerAdvogada img {
+    filter: none;
+}
+
+[data-theme="light"] .button {
+    background-color: #174034;
+}
+
+[data-theme="light"] .button:hover:enabled {
+    background-color: #01261F;
+}
+
+[data-theme="light"] .button:disabled {
+    background-color: var(--bege38);
+}
+
+html {
+    color-scheme: var(--esquemaCor);
+    scrollbar-gutter: stable;
+    background-color: var(--verdeClaro);
+}
+
+html:has(.layoutAdvogada) {
+    background-color: var(--cinzaEscuro);
+}
+
 body {
-  margin: 0;
-  padding: 0;
+    color: var(--bege);
 }
 
-body {
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-normal);
-  background-color: var(--color-bg);
-  color: var(--color-text-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
+option,
+optgroup {
+    background-color: var(--cinzaClaro);
+    color: var(--bege);
 }
 
-/* O `body` é flex centralizado desde o login antigo, e o `#root` — item
-   desse flex — encolhia até o conteúdo. A área da advogada escapava por
-   `width: 100vw`, e o portal por `width: 100%` + `align-self: stretch`; o
-   layout de autenticação (Fase 2a) precisa da tela inteira, e a regra certa é
-   uma só, aqui. */
-#root {
-  width: 100%;
-  align-self: stretch;
+[data-theme="light"] .contadorQuantidade {
+    background-color: rgba(46, 125, 50, 0.12);
+    color: #1B5E20;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  margin: 0;
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-tight);
+.tela {
+    display: flex;
+
+    min-height: 100vh;
 }
 
-p {
-  margin: 0;
+h1 {
+    color: var(--bege);
+    font-weight: 600;
 }
 
-a {
-  color: var(--color-link);
-  text-decoration: none;
+.notaCampo {
+    display: block;
+    margin-top: 0.35rem;
+
+    color: var(--bege70);
+    font-size: 0.78rem;
+    line-height: 1.4;
 }
 
-a:hover {
-  text-decoration: underline;
+.divLabelInLine + .notaCampo,
+.selectsCadastrar + .notaCampo {
+    margin: -0.5rem 0 0.8rem 0.25rem;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   FOCO VISÍVEL — global (Fase 4.5, achado #9)
+.filtroOpcoes {
+    width: 100%;
+    margin-bottom: 0.4rem;
+    padding: 0.45rem 0.7rem;
+    box-sizing: border-box;
 
-   Havia SEIS `outline: none` no projeto, e dois deles estavam DENTRO de regras
-   `:focus-visible` — ou seja, a regra escrita para desenhar o foco era a que o
-   apagava. Quem navega por teclado (e quem depende disso para navegar) perdia a
-   noção de onde está, sobretudo no tema escuro, que é o padrão do app.
+    border: 1px solid var(--bege30);
+    border-radius: 0.5rem;
+    background: transparent;
 
-   `:focus-visible` e não `:focus`: o navegador só aplica quando o foco veio de
-   teclado ou de navegação assistiva. Clicar num botão com o mouse não desenha
-   anel — que é justamente o motivo pelo qual alguém escreveu `outline: none` em
-   primeiro lugar, e o motivo de a correção não ser simplesmente removê-los.
-
-   `outline` e não `box-shadow`: outline não participa do layout, não desloca
-   nada e acompanha o border-radius nos navegadores atuais. `outline-offset`
-   descola o anel da borda do controle para ele não se confundir com a borda de
-   um input.
-   ═══════════════════════════════════════════════════════════════════════════ */
-:focus-visible {
-  outline: var(--focus-ring-width) solid var(--color-focus);
-  outline-offset: var(--focus-ring-offset);
-  border-radius: var(--radius-sm, 4px);
+    color: var(--bege);
+    font-size: 0.85rem;
 }
 
-/* O textarea do texto final ocupa a largura toda e tem borda própria; o offset
-   positivo faria o anel encostar no cartão. Aqui ele fica rente. */
-/* O `border-radius` da regra global vale para o que não tem raio próprio (um
-   link, um ícone). Campo e botão têm: sem isto, o campo arredondado ficaria
-   quadrado no instante em que recebe foco. */
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  border-radius: var(--radius-campo);
+.filtroOpcoes::placeholder {
+    color: var(--bege60);
 }
 
-.final__textarea:focus-visible,
-.biblioteca__busca input:focus-visible,
-.var-selector__search input:focus-visible {
-  outline-offset: 0;
+.filtroOpcoes:focus {
+    outline: none;
+    border-color: var(--bege70);
 }

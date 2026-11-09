@@ -1,0 +1,36 @@
+.layoutAdvogada {
+    background-color: var(--cinzaEscuro);
+}
+
+.mainAdvogada {
+    padding: 90px 20px 20px;
+}
+
+@media (max-width: 768px) {
+    .mainAdvogada {
+        padding: 130px 12px 20px;
+    }
+}
+
+.pularConteudo {
+    position: absolute;
+    top: -3rem;
+    left: 1rem;
+    z-index: 1000;
+
+    padding: 0.6rem 1rem;
+    border-radius: 0.5rem;
+
+    background-color: var(--bege);
+    color: var(--cinzaEscuro);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.pularConteudo:focus {
+    top: 1rem;
+}
+
+.mainAdvogada:focus {
+    outline: none;
+}

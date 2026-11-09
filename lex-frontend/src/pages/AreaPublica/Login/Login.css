@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+.login {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+}
+
+input.login {
+    width: 24rem;
+}
+
+.buttonLogin {
+    width: 24rem;
+}
+.erroLogin {
+    width: 24rem;
+    color: var(--vermelhoTexto);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.infoLogin {
+    width: 24rem;
+    color: var(--bege70);
+    font-size: 0.9rem;
+    text-align: center;
+}

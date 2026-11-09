@@ -1,0 +1,145 @@
+.telaConfiguracoes {
+    width: 100%;
+    justify-content: center;
+    gap: 3rem;
+
+    padding: 0 1rem;
+    box-sizing: border-box;
+
+    background-color: var(--verdeClaro);
+    color: var(--bege);
+}
+
+.configuracoesConteudo .conteinerPerfil,
+.configuracoesConteudo input.perfil,
+.configuracoesConteudo select.perfil {
+    box-sizing: border-box;
+}
+
+.configuracoesConteudo {
+    flex: 1;
+    min-width: 0;
+    max-width: 36rem;
+}
+
+.configuracoesMenu {
+    position: sticky;
+    top: 2rem;
+
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 0.25rem;
+
+    width: 12rem;
+    margin-top: 2rem;
+    padding-right: 1rem;
+
+    border-right: 1px solid var(--bege20);
+    align-self: flex-start;
+}
+
+.configuracoesOpcao {
+    padding: 0.6rem 1rem;
+    border: none;
+    border-radius: 0.5rem;
+
+    background: none;
+    color: var(--bege70);
+    font-size: 0.95rem;
+    text-align: left;
+
+    cursor: pointer;
+}
+
+.configuracoesOpcao:hover {
+    background-color: var(--bege10);
+    color: var(--bege);
+}
+
+.configuracoesOpcaoAtiva {
+    background-color: var(--bege10);
+    color: var(--bege);
+    font-weight: 600;
+}
+
+.opcoesTema {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.opcaoTema {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--bege30);
+    border-radius: 0.5rem;
+
+    color: var(--bege87);
+    cursor: pointer;
+}
+
+.opcaoTema:hover {
+    background-color: var(--bege5);
+}
+
+.opcaoTemaAtiva {
+    border-color: var(--bege70);
+    background-color: var(--bege10);
+}
+
+.opcaoTema input {
+    accent-color: var(--bege);
+}
+
+.opcaoTemaTexto {
+    display: flex;
+    flex-direction: column;
+}
+
+.opcaoTemaTexto .campoNota {
+    margin-top: 0.15rem;
+    color: var(--bege87);
+}
+
+.opcaoTema:has(input:focus-visible) {
+    outline: 2px solid var(--bege);
+    outline-offset: 2px;
+}
+
+.configuracoesOpcao:focus-visible {
+    outline: 2px solid var(--bege);
+    outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+    .telaConfiguracoes {
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 0;
+        padding: 0;
+    }
+
+    .configuracoesConteudo {
+        max-width: none;
+    }
+
+    .configuracoesMenu {
+        position: static;
+        flex-direction: row;
+        width: auto;
+        margin: 3.5rem 1rem 0;
+        padding: 0 0 0.5rem;
+
+        border-right: none;
+        border-bottom: 1px solid var(--bege20);
+        align-self: stretch;
+    }
+
+    .configuracoesConteudo .conteinerPerfil {
+        margin-top: 1rem;
+    }
+}

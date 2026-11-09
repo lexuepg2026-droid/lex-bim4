@@ -1,0 +1,127 @@
+.pendenciasTopo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.pendenciasTopo .buttonOutlined {
+    height: 2.5rem;
+    padding: 0 1.2rem;
+}
+
+.pendenciasSemSinal {
+    margin: 0.75rem 0;
+    color: var(--azulStatus);
+    font-size: 0.88rem;
+}
+
+.pendenciasLista {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding: 0;
+    list-style: none;
+}
+
+.pendenciaItem {
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--bege20);
+    border-radius: 12px;
+    background-color: var(--bege5);
+}
+
+.pendenciaItem--falhou {
+    border-color: var(--vermelhoStatus);
+}
+
+.pendenciaLinha {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.pendenciaOrdem {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 50%;
+
+    background-color: var(--bege10);
+    color: var(--bege);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.pendenciaTextos {
+    flex: 1;
+    min-width: 12rem;
+}
+
+.pendenciaDescricao {
+    margin: 0;
+    color: var(--bege);
+    font-weight: 600;
+}
+
+.pendenciaEstado {
+    margin: 0.2rem 0 0;
+    color: var(--bege70);
+    font-size: 0.85rem;
+}
+
+.pendenciaItem--falhou .pendenciaEstado {
+    color: var(--vermelhoTexto);
+}
+
+.pendenciaAcoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.pendenciaVersoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+}
+
+.pendenciaVersao {
+    padding: 0.75rem;
+    border-radius: 10px;
+    background-color: var(--bege5);
+}
+
+.pendenciaVersao h3 {
+    margin: 0 0 0.5rem;
+    color: var(--bege);
+    font-size: 0.9rem;
+}
+
+.pendenciaVersao dl {
+    display: grid;
+    grid-template-columns: 6rem minmax(0, 1fr);
+    gap: 0.3rem 0.6rem;
+    margin: 0;
+}
+
+.pendenciaVersao dt {
+    color: var(--bege70);
+    font-size: 0.8rem;
+}
+
+.pendenciaVersao dd {
+    margin: 0;
+    color: var(--bege);
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}

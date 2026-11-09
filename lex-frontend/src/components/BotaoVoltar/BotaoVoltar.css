@@ -1,0 +1,53 @@
+.botaoVoltar {
+    width: fit-content;
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    padding: 8px 16px 8px 8px;
+    border-radius: 2rem;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+
+    background: transparent;
+
+    color: var(--bege87);
+    font-size: 16px;
+    opacity: 0.85;
+
+    z-index: 1000;
+
+    transform: translateY(0);
+    transition: transform 0.25s ease, opacity 0.15s ease;
+}
+
+.botaoVoltar--escondido {
+    transform: translateY(-6rem);
+}
+
+.botaoVoltar:hover {
+    opacity: 1;
+}
+
+button.botaoVoltar:hover:enabled {
+    background-color: var(--bege10);
+}
+
+.seta {
+    width: 32px;
+    height: 32px;
+    padding-bottom: 8px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid var(--bege87);
+    border-radius: 50%;
+
+    font-size: 32px;
+    font-weight: 300;
+    line-height: 1;
+}

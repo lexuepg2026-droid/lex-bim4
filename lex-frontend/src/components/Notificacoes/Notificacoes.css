@@ -1,0 +1,193 @@
+.notificacoesContainer {
+    position: relative;
+}
+
+.sininhoBotao {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 2.5rem;
+    height: 2.5rem;
+
+    border-radius: 50%;
+    border: none;
+
+    background-color: transparent;
+
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.notificacoesContainer:hover .sininhoBotao, .notificacoesContainer.ativo .sininhoBotao {
+    background-color: var(--bege10);
+}
+
+.sininhoBotao img {
+    width: 20px;
+    height: 20px;
+}
+
+.sininhoBadge {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    top: 0;
+    right: 0;
+
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.3rem;
+
+    background-color: var(--vermelho);
+    color: #fff;
+    border-radius: 1rem;
+
+    font-size: 0.65rem;
+    font-weight: 700;
+}
+
+.notificacoesLista {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+
+    width: 320px;
+    max-height: 400px;
+
+    background-color: var(--cinzaClaro);
+    border: 1px solid var(--bege10);
+    border-radius: 12px;
+
+    box-shadow: 0 8px 24px var(--preto50);
+    overflow-y: auto;
+    z-index: 20;
+}
+
+.notificacoesListaCabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    padding: 0.75rem 1rem;
+
+    background-color: var(--cinzaClaro);
+    color: var(--bege);
+    font-weight: 600;
+
+    background-blend-mode: normal;
+    border-bottom: 1px solid var(--bege10);
+
+    z-index: 1;
+}
+
+.notificacoesMarcarTodas {
+    background: none;
+    border: none;
+
+    color: var(--bege70);
+    font-size: 0.75rem;
+    font-weight: 500;
+
+    cursor: pointer;
+}
+
+.notificacoesMarcarTodas:hover {
+    color: var(--bege);
+}
+
+.notificacoesVazio {
+    padding: 1rem;
+    color: var(--bege70);
+
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.notificacoesItem {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--bege10);
+}
+
+.notificacoesItem:last-child {
+    border-bottom: none;
+}
+
+.notificacoesItem:hover {
+    background-color: var(--bege5);
+}
+
+.notificacoesItem.notificacoesItemLida .notificacoesItemTitulo,
+.notificacoesItem.notificacoesItemLida .notificacoesItemSubtitulo {
+    opacity: 0.5;
+}
+
+.notificacoesItem.notificacoesItemLida {
+    background-color: var(--cinzaEscuro);
+}
+
+.notificacoesItemLink {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+
+    min-width: 0;
+
+    text-decoration: none;
+}
+
+.notificacoesItemGrupo {
+    color: var(--bege70);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.notificacoesItemTitulo {
+    color: var(--bege);
+    font-size: 0.85rem;
+    font-weight: 500;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notificacoesItemSubtitulo {
+    color: var(--bege70);
+    font-size: 0.75rem;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notificacoesItemMarcar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 1.5rem;
+    height: 1.5rem;
+
+    border-radius: 50%;
+    border: none;
+
+    background-color: transparent;
+    color: var(--bege70);
+
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.notificacoesItemMarcar:hover {
+    background-color: var(--bege10);
+    color: var(--bege);
+}

@@ -1,0 +1,244 @@
+.headerAdvogada {
+    width: 100%;
+    padding: 0.5rem 2rem;
+    display: flex;
+    gap: 12rem;
+    justify-content: center;
+
+    background-color: var(--verdeClaro);
+    position: fixed;
+    top: 0;
+    z-index: 100;
+
+    transform: translateY(0);
+    transition: transform 0.25s ease;
+}
+
+.headerAdvogada--escondido {
+    transform: translateY(-100%);
+}
+
+.headerLogo {
+    width: fit-content;
+
+    display: flex;
+    align-items: center;
+}
+
+.headerLogo img {
+    width: 5rem;
+}
+
+body:has(.botaoVoltar) .headerLogo {
+    margin-left: 4rem;
+}
+
+.navHeader {
+    position: relative;
+    display: flex;
+    align-items: center;
+
+    gap: 2rem;
+    justify-content: center;
+
+    font-size: 1rem;
+}
+
+.navHeader a {
+    width: fit-content;
+
+    position: relative;
+
+    color: var(--bege87);
+}
+
+.navHeader a.active {
+    color: var(--bege);
+}
+
+.indicadorNav {
+    position: absolute;
+    bottom: 5px;
+
+    height: 1.5px;
+
+    background-color: var(--bege);
+    border-radius: 999px;
+
+    transition: left 0.25s ease, width 0.25s ease;
+}
+
+.menuUsuario {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+
+    cursor: pointer;
+}
+
+.menuUsuario:hover, .menuUsuario.ativo {
+    background-color: var(--bege10);
+
+    border-radius: 32px;
+}
+
+
+.saudacaoHeader {
+    color: var(--bege);
+    font-size: 0.9rem;
+    font-weight: 400;
+}
+
+.avatarUsuario {
+    width: 32px;
+    height: 32px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background-color: var(--verdeClaro);
+    color: var(--bege);
+    border: 1px solid var(--bege);
+    border-radius: 50%;
+
+    font-size: 0.75rem;
+    font-weight: 700;
+
+    user-select: none;
+}
+
+.dropdownUsuario {
+    display: flex;
+    position: absolute;
+    flex-direction: column;
+
+    top: calc(100% + 0.5rem);
+    width: 10rem;
+
+    right: 0;
+
+    background-color: var(--cinzaEscuro);
+    border-radius: 0.5rem;
+
+    overflow: hidden;
+    z-index: 10;
+    box-shadow: 0 0 10px 5px rgba(0, 0, 0, 0.1);
+}
+
+.dropdownUsuario a {
+    width: 10rem;
+}
+
+.dropdownUsuario a, .dropdownUsuario button {
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+
+    color: var(--bege87);
+    background: none;
+
+    text-align: left;
+    text-decoration: none;
+
+    cursor: pointer;
+}
+
+.dropdownUsuario a:hover,
+.dropdownUsuario button:hover {
+    background-color: var(--bege10);
+}
+
+.headerAcoes {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.dropdownUsuario .headerSair:hover {
+    background-color: var(--vermelho40);
+}
+
+@media (max-width: 1200px) {
+    .headerAdvogada {
+        gap: 2rem;
+        justify-content: space-between;
+    }
+
+    body:has(.botaoVoltar) .headerLogo {
+        margin-left: 6.5rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .headerAdvogada {
+        flex-wrap: wrap;
+        gap: 0.25rem 0.5rem;
+        padding: 0.5rem 1rem;
+    }
+
+    .headerAcoes {
+        gap: 0.25rem;
+    }
+
+    .navHeader {
+        order: 3;
+        width: 100%;
+        gap: 1.25rem;
+        justify-content: flex-start;
+
+        padding-bottom: 0.5rem;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
+    .saudacaoHeader {
+        display: none;
+    }
+}
+
+.headerPendencias {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+
+    color: var(--amareloStatus);
+    text-decoration: none;
+}
+
+.headerPendencias:hover {
+    background-color: var(--bege10);
+}
+
+.headerPendencias--falha {
+    color: var(--vermelhoStatus);
+}
+
+.headerPendenciasContador {
+    position: absolute;
+    top: 0.1rem;
+    right: 0.1rem;
+
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.25rem;
+    border-radius: 999px;
+
+    background-color: var(--amareloStatus);
+    color: #1a1a1a;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.1rem;
+    text-align: center;
+}
+
+.headerPendencias--falha .headerPendenciasContador {
+    background-color: var(--vermelhoStatus);
+    color: #ffffff;
+}

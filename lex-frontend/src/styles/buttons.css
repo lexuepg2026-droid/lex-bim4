@@ -1,0 +1,80 @@
+/* ------------------------ Tipo button ------------------------ */
+
+button:disabled {
+    background-color: var(--bege38);
+    cursor: not-allowed;
+}
+
+/* ------------------------ Classe button ------------------------ */
+
+.button {
+    background-color: var(--bege70);
+    height: 3.5rem;
+    border-radius: 2rem;
+    
+    color: var(--verdeEscuro);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    cursor: pointer;
+    
+    transition: background-color 0.2s ease;
+}
+
+.button:hover:enabled {
+    background-color: var(--bege87);
+}
+
+.buttonHover:hover {
+    background-color: var(--bege87);
+}
+
+/* ------------------------ Button No Border ------------------------ */
+
+.buttonNoBorder {
+    height: 3.5rem;
+    border-radius: 2rem;
+    
+    color: var(--bege87);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    cursor: pointer;
+    
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.buttonNoBorder:hover {
+    background-color: var(--bege10);
+    color: var(--bege);
+}
+
+/* ------------------------ Button Outlined ------------------------ */
+
+.buttonOutlined {
+    background-color: transparent;
+    height: 3.5rem;
+    border-radius: 2rem;
+    border: 1px solid var(--bege70);
+    
+    color: var(--bege87);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    cursor: pointer;
+    
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.buttonOutlined:hover {
+    background-color: var(--bege10);
+    
+    color: var(--bege);
+    border-color: var(--bege87);
+}

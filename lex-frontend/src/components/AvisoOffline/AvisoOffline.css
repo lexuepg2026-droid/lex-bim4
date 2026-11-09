@@ -1,0 +1,37 @@
+.avisoOffline {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+
+    max-width: 1400px;
+    margin: 0 auto 1rem;
+    padding: 0.75rem 1.25rem;
+
+    background-color: var(--cinzaClaro);
+    border-left: 4px solid var(--azulStatus);
+    border-radius: 16px;
+
+    color: var(--bege87);
+    font-size: 0.88rem;
+}
+
+.avisoOffline svg {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    color: var(--azulStatus);
+}
+
+.avisoOfflineTexto {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.avisoOfflineTexto strong {
+    color: var(--bege);
+}
+
+.avisoOfflineTexto a {
+    color: var(--bege);
+    text-decoration: underline;
+}

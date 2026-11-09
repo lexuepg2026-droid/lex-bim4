@@ -1,0 +1,952 @@
+.telaClientes {
+    flex-direction: column;
+    min-height: calc(100vh - 105px);
+}
+
+.baloesTelasAdvogada {
+    background-color: var(--cinzaClaro);
+    padding: 16px 25px;
+
+    border-radius: 24px;
+}
+
+.parteSuperior {
+    display: flex;
+    justify-content:space-between;
+    align-items: center;
+
+    width: 100%;
+    text-indent: 7px;
+}
+
+.barraSelecao {
+    display: flex;
+    align-items: center;
+
+    width: 100%;
+    height: 40px;
+
+    margin-left: 4px;
+}
+
+.checkboxMestre {
+    position: relative;
+    display: inline-flex;
+
+    width: 1.75rem;
+    height: 1.75rem;
+
+    margin-right: 8px;
+}
+
+.botaoExcluirSelecionados {
+    margin-left: auto;
+}
+
+.textoSelecao {
+    color: var(--bege87);
+    font-weight: 600;
+}
+
+h1.clientes {
+    font-size: 1.5rem;
+
+    display: flex;
+    align-items: center;
+}
+
+.contadorClientes {
+    margin-top: 3px;
+    margin-left: 10px;
+
+    color: var(--bege70);
+    font-weight: 400;
+    font-size: 1rem;
+}
+
+.barraPesquisar {
+    display: flex;
+    align-items: center;
+
+    width: 100%;
+    height: 2rem;
+
+    border: 1px solid var(--bege70);
+    border-radius: 1rem;
+
+    font-size: 0.8rem;
+    color: var(--bege87);
+    font-weight: 500;
+
+    margin: 0 3rem;
+}
+
+.barraPesquisar img {
+    cursor: pointer;
+
+    padding: 0.8rem;
+
+    width: 40px;
+}
+
+.inputClienteBuscar {
+    width: 100%;
+}
+
+.inputClienteBuscar:focus {
+    outline: none;
+    border: none;
+}
+
+.inputClienteBuscar::placeholder {
+    font-size: 0.8rem;
+    color: var(--bege87);
+    font-weight: 500;
+}
+
+.barraPesquisar:hover, .barraPesquisar:hover ::placeholder {
+    border-color: var(--bege87);
+    color: var(--bege);
+}
+
+.novoCliente {
+    display: flex;
+
+    font-size: 1.5rem;
+    width: 50px;
+    height: 40px;
+
+    padding-left: 6px;
+
+    color: var(--bege87);
+}
+
+.novoCliente:hover {
+    color: var(--bege);
+    background-color: var(--bege10);
+
+    border-radius: 50%;
+}
+
+.tabelaContainer {
+    overflow-x: auto;
+}
+
+.tabela {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.tabela td {
+    color: var(--bege87);
+    text-align: left;
+
+    padding: 0.5rem 1rem 0.5rem 0.5rem;
+    left: 0;
+
+    border: none;
+
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.tabela th {
+    color: var(--bege70);
+
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+
+    border-bottom: 1px solid var(--bege50);
+
+    padding-top: 15px;
+    padding-bottom: 15px;
+
+    white-space: nowrap;
+}
+
+.checkBoxCliente {
+    display: flex;
+    align-items: center;
+    justify-content: left;
+}
+
+.checkBoxClienteConteudo {
+    position: relative;
+
+    display: flex;
+    align-items: center;
+    justify-content: left;
+
+    width: 2.25rem;
+    height: 2.25rem;
+
+    margin-right: 25px;
+}
+
+.avatarCliente {
+    position: absolute;
+    inset: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+
+    border-radius: 50%;
+    color: #fff;
+
+    font-size: 0.85rem;
+    font-weight: 600;
+
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+.checkBoxCliente input[type="checkbox"], .checkboxMestre input {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+
+    width: 18px;
+    height: 18px;
+
+    margin: 0;
+
+    appearance: none;
+    border: 1.5px solid var(--bege87);
+    border-radius: 10%;
+    display: inline-grid;
+    place-content: center;
+
+    cursor: pointer;
+    z-index: 1;
+}
+
+.checkBoxCliente input[type="checkbox"] {
+    opacity: 0;
+}
+
+input[type="checkbox"]:checked, .checkboxMestre input[type="checkbox"]:checked {
+  background-color: var(--bege);
+}
+
+input[type="checkbox"]:checked::before, .checkboxMestre input[type="checkbox"]:checked::before {
+  content: "";
+
+  width: 10px;
+  height: 5px;
+
+  border-left: 2px solid var(--cinzaEscuro);
+  border-bottom: 2px solid var(--cinzaEscuro);
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+
+.checkBoxCirculo {
+    width: 100%;
+    height: 100%;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.checkBoxCirculo:hover {
+    background-color: var(--bege10);
+
+    border-radius: 50%;
+}
+
+.tabela tbody tr:hover {
+    background-color: var(--bege10);
+}
+
+.tabela tbody tr:hover .avatarCliente {
+    opacity: 0;
+}
+.tabela tbody tr:hover .checkBoxClienteConteudo input {
+    opacity: 1;
+}
+.tabela tbody tr:hover td {
+    color: var(--bege);
+}
+
+.tabela tbody tr.linhaSelecionada .avatarCliente {
+    opacity: 0;
+}
+.tabela tbody tr.linhaSelecionada .checkBoxClienteConteudo input {
+    opacity: 1;
+}
+
+.tabela tbody tr.linhaSelecionada td {
+    color: var(--bege);
+}
+
+.tabela tbody tr.linhaSelecionada {
+    background-color: var(--bege10);
+}
+
+.tabela--modoSelecao tbody .avatarCliente {
+    opacity: 0;
+}
+.tabela--modoSelecao tbody .checkBoxClienteConteudo input {
+    opacity: 1;
+}
+
+.botoesAcoes {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.tabela tbody tr:hover .botoesAcoes {
+    opacity: 1;
+}
+
+.tabela tbody tr:has(.botoesAcoes:focus-within) .botoesAcoes {
+    opacity: 1;
+}
+
+.botaoIcone {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 2.5rem;
+    height: 2.5rem;
+
+    border-radius: 50%;
+    border: none;
+
+    background-color: transparent;
+
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.botaoIcone img {
+    width: 16px;
+    height: 16px;
+}
+
+.botaoIcone:hover {
+    background-color: var(--bege10);
+}
+
+.botaoIconePerigo:hover {
+    background-color: var(--vermelho10);
+}
+
+.mensagemErro { color: var(--vermelhoTexto); }
+
+.detalheTopo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    padding-bottom: 1.25rem;
+    margin-bottom: 1.25rem;
+
+    border-bottom: 1px solid var(--bege10);
+}
+
+.detalheIdentidade {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.detalheAvatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 3.5rem;
+    height: 3.5rem;
+
+    border-radius: 50%;
+
+    color: var(--branco);
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.tituloPagina {
+    font-size: 1.5rem;
+    color: var(--bege);
+}
+
+.detalheTopo .tituloPagina {
+    margin: 0;
+}
+
+.detalheSubtitulo {
+    margin: 0.2rem 0 0;
+
+    color: var(--bege70);
+    font-size: 0.9rem;
+}
+
+.detalheAbas {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    margin-bottom: 1.25rem;
+}
+
+.detalheAbasBotoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.detalheAba {
+    background-color: transparent;
+    border: none;
+    border-radius: 2rem;
+
+    padding: 0.6rem 1.25rem;
+
+    color: var(--bege70);
+    font-weight: 600;
+    font-size: 0.9rem;
+
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.detalheAba:hover {
+    background-color: var(--bege10);
+}
+
+.detalheAbaAtiva {
+    background-color: var(--bege87);
+    color: var(--cinzaEscuro);
+}
+
+.detalheAbaAtiva:hover {
+    background-color: var(--bege);
+}
+
+.detalheBotaoNovo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 2.25rem;
+    height: 2.25rem;
+
+    border-radius: 50%;
+
+    color: var(--bege87);
+    font-size: 1.3rem;
+    text-decoration: none;
+
+    padding-left: 1px;
+    padding-bottom: 1px;
+
+    transition: background-color 0.15s ease;
+}
+
+.detalheBotaoNovo:hover {
+    background-color: var(--bege10);
+    color: var(--bege);
+}
+
+.secaoForm {
+    background-color: var(--bege10);
+    border-radius: 16px;
+    padding: 20px;
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 20px;
+}
+
+.secaoForm h3 {
+    grid-column: span 6;
+    margin-top: 0;
+    margin-bottom: 0;
+    color: var(--bege);
+    font-size: 1rem;
+}
+
+.secaoForm:has(.detalheListaProcessos),
+.secaoForm:has(.detalheListaFinanceiro),
+.secaoForm:has(.detalheCarregando) {
+    display: block;
+}
+
+.tituloInput {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.tituloInput label {
+    color: var(--bege70);
+    font-size: 0.9rem;
+}
+
+.tituloInput input, .tituloInput textArea {
+    height: 3.5rem;
+
+    border: 1px solid var(--bege70);
+    border-radius: 1rem;
+    background-color: transparent;
+
+    color: var(--bege);
+    font-weight: 500;
+    font-family: inherit;
+
+    padding: 0 1rem;
+}
+
+.tituloInput textarea {
+    height: auto;
+    min-height: 5rem;
+    padding: 1rem;
+    resize: vertical;
+}
+
+.tituloInput input:hover, .tituloInput textarea:hover {
+    border-color: var(--bege);
+}
+
+.tituloInput input:focus, .tituloInput textarea:focus {
+    outline: none;
+    border-color: var(--bege);
+}
+
+.tituloInput .valorLeitura {
+    display: flex;
+    align-items: center;
+
+    min-height: 3.5rem;
+
+    border: 1px solid var(--bege70);
+    border-radius: 1rem;
+    padding: 0 1rem;
+
+    color: var(--bege);
+    font-weight: 500;
+}
+
+.tituloInput input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: none;
+    opacity: 1;
+    cursor: pointer;
+
+    width: 18px;
+    height: 18px;
+
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 18px 18px;
+    background-image: url("../../../assets/images/icons/calendario.svg");
+}
+
+[data-theme="light"] .tituloInput input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: brightness(0.25);
+}
+
+.informacaoMuitoPequeno {
+    grid-column: span 1;
+}
+
+.informacaoPequena {
+    grid-column: span 2;
+}
+
+.informacaoQuaseNormal {
+    grid-column: span 3;
+}
+
+.informacaoNormal {
+    grid-column: span 4;
+}
+
+.informacaoQuaseGrande {
+    grid-column: span 5;
+}
+
+.informacaoGrande {
+    grid-column: span 6;
+}
+
+.observacaoBox {
+    display: block;
+    min-height: 5rem;
+
+    border: 1px solid var(--bege70);
+    border-radius: 1rem;
+    padding: 1rem;
+
+    color: var(--bege);
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.detalheCarregando {
+    color: var(--bege70);
+}
+
+.detalheItemClicavel {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.detalheListaProcessos {
+    margin-top: 0.75rem;
+}
+
+.detalheItemProcesso {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 5px;
+
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 16px;
+
+    padding: 0.75rem 0.75rem;
+    cursor: pointer;
+}
+
+.detalheItemProcesso:hover {
+    background-color: var(--bege10);
+}
+
+.setaDetalhes {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 1.2rem;
+    height: 1.2rem;
+
+    transition: transform 0.15s ease;
+}
+
+.setaDetalhes::before {
+    content: "";
+
+    width: 0.45rem;
+    height: 0.45rem;
+
+    border-right: 2px solid var(--bege);
+    border-bottom: 2px solid var(--bege);
+
+    transform: rotate(-45deg);
+    margin-left: -2px;
+}
+
+.setaDetalhesAberta {
+    transform: rotate(90deg);
+}
+
+.detalheItemTitulo {
+    flex: 1;
+    text-align: left;
+    color: var(--bege);
+    font-weight: 600;
+}
+
+.contadorQuantidade {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.4rem;
+
+    background-color: rgba(76, 175, 80, 0.2);
+    color: var(--verdeStatus);
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 1rem;
+}
+
+.detalheItemProcesso.detalheItemClicavel:hover {
+    background-color: var(--bege10);
+}
+
+.detalheListaFinanceiro {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem;
+}
+
+.detalheCardFinanceiro {
+    background-color: var(--cinzaClaro80);
+    border-radius: 16px;
+    padding: 1rem 1.25rem;
+}
+
+.detalheCardFinanceiro h4 {
+    color: var(--bege);
+    margin: 0 0 0.75rem;
+    font-size: 0.95rem;
+}
+
+.detalheFinanceiroLinha {
+    display: flex;
+    justify-content: space-between;
+
+    color: var(--bege70);
+    font-size: 0.85rem;
+
+    padding: 0.25rem 0;
+}
+
+.detalheFinanceiroLinha strong {
+    color: var(--bege);
+}
+
+.detalheCardFinanceiro.detalheItemClicavel:hover {
+    background-color: var(--bege10);
+}
+
+.seletorTipoPessoa {
+    margin-top: 10px;
+}
+
+.grupoRadio {
+    display: flex;
+
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.grupoRadio > div {
+    display: flex;
+    align-items: center;
+
+    gap: 8px;
+}
+
+.grupoRadio label {
+    cursor: pointer;
+    color: var(--bege);
+}
+
+.grupoRadio input[type="radio"] {
+    display: none;
+}
+
+.grupoRadio label::before {
+    content: "";
+
+    display: inline-block;
+    vertical-align: middle;
+
+    width: 18px;
+    height: 18px;
+
+    border-radius: 50%;
+    border: 2px solid var(--bege);
+
+    margin-right: 4px;
+}
+
+.grupoRadio input[type="radio"]:checked + label::before {
+    background-color: var(--bege);
+    box-shadow: inset 0 0 0 3px var(--cinzaClaro);
+}
+
+.selectForm option {
+    background-color: var(--cinzaClaro);
+    color: var(--bege);
+}
+
+.acoesForm {
+    display: flex;
+    justify-content: flex-end;
+    gap: 15px;
+
+    margin-top: 30px;
+    padding-top: 20px;
+}
+
+.acoesForm button {
+    padding: 0 1.5rem;
+    height: 3rem;
+}
+
+.seletorMestre {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-right: 8px;
+}
+
+.seletorMestre .checkboxMestre {
+    margin-right: 0;
+}
+
+.checkboxMestre input[type="checkbox"]:indeterminate {
+    background-color: var(--bege);
+}
+
+.checkboxMestre input[type="checkbox"]:indeterminate::before {
+    content: "";
+    width: 10px;
+    height: 2px;
+    background-color: var(--cinzaEscuro);
+}
+
+.botaoSetaSelecao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.botaoSetaSelecao:hover {
+    background-color: var(--bege10);
+}
+
+.setaSelecao {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid var(--bege87);
+}
+
+.menuSelecao {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    min-width: 9rem;
+    padding: 0.4rem 0;
+    list-style: none;
+    background-color: var(--cinzaMenu);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.menuSelecao button {
+    width: 100%;
+    padding: 0.65rem 1.25rem;
+    text-align: left;
+    color: var(--bege87);
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+
+.menuSelecao button:hover,
+.menuSelecao button:focus-visible {
+    background-color: var(--bege10);
+    outline: none;
+}
+
+.resumoPortalCliente {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+
+    background-color: var(--cinzaClaro80);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+
+    color: var(--bege87);
+    font-size: 0.9rem;
+}
+
+.resumoPortalCliente strong {
+    color: var(--bege);
+}
+
+.resumoPortalCliente .entregaAcessoCodigo {
+    font-size: 1.1rem;
+}
+
+.notaForm {
+    grid-column: 1 / -1;
+
+    color: var(--bege70);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.inputErro {
+    border-color: var(--vermelho) !important;
+}
+
+.acoesPortalForm {
+    grid-column: 1 / -1;
+
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.acoesPortalForm button {
+    height: 2.75rem;
+    padding: 0 1.25rem;
+}
+
+.resumoPortalCliente a {
+    width: auto;
+    text-decoration: none;
+}
+
+.itemParticipante .nomeParticipante a {
+    color: var(--bege);
+    text-decoration: none;
+}
+
+.itemParticipante .nomeParticipante a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+    .baloesTelasAdvogada {
+        padding: 16px;
+    }
+
+    .parteSuperior {
+        flex-wrap: wrap;
+        row-gap: 0.75rem;
+    }
+
+    .parteSuperior .barraPesquisar {
+        order: 3;
+        flex-basis: 100%;
+        margin: 0;
+    }
+
+    .secaoForm {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+        padding: 16px;
+    }
+
+    .secaoForm > *,
+    .secaoForm h3 {
+        grid-column: 1 / -1;
+    }
+
+    .detalheTopo {
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+}

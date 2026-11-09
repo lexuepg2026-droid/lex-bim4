@@ -1,0 +1,40 @@
+.contextoProcesso {
+    display: grid;
+    gap: 0.35rem;
+
+    margin: 0 0 0.9rem;
+    padding: 0.65rem 0.85rem;
+
+    border-left: 3px solid var(--bege40);
+    border-radius: 0.5rem;
+    background-color: var(--bege5);
+}
+
+.contextoProcesso div {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.contextoProcesso dt {
+    color: var(--bege70);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.contextoProcesso dd {
+    margin: 0;
+    color: var(--bege);
+    font-size: 0.88rem;
+    overflow-wrap: anywhere;
+}
+
+.contextoProcessoNumero {
+    display: inline-block;
+    margin-left: 0.5rem;
+    color: var(--bege70);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}

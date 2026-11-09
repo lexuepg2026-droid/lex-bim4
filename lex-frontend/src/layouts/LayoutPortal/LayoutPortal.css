@@ -1,0 +1,21 @@
+.telaLayoutPortal {
+    background-color: var(--verdeClaro);
+
+    display: flex;
+    flex-direction: column;
+
+    min-height: 100vh;
+
+    justify-content: center;
+}
+
+.logoPortal {
+    display: flex;
+    justify-content: center;    
+    height: fit-content;
+}
+
+.logoPortal img {
+    width: 4rem;
+    padding-top: 2.5rem;
+}
