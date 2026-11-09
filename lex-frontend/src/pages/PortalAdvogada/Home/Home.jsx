@@ -241,6 +241,13 @@ function Home() {
     const [statusData, setStatusData] = useState(null);
     const [feesByMonth, setFeesByMonth] = useState([]);
     const [parcelasUrgentes, setParcelasUrgentes] = useState([]);
+    // Cada bloco sabe se carregou e se falhou: "Todas as parcelas estão em dia"
+    // e "Sem dados mensais" só aparecem com a resposta na mão (fase R2).
+    const [parcelasCarregadas, setParcelasCarregadas] = useState(false);
+    const [erroParcelas, setErroParcelas] = useState("");
+    const [mensalCarregado, setMensalCarregado] = useState(false);
+    const [erroMensal, setErroMensal] = useState("");
+    const [erroStatus, setErroStatus] = useState("");
     const [mes, setMes] = useState(mesAtual);
     const [busca, setBusca] = useState("");
     const navigate = useNavigate();
@@ -263,13 +270,25 @@ function Home() {
     useEffect(() => {
         dashboardService.getStatusCounts()
             .then((res) => setStatusData(res.data))
-            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar as estatísticas.")));
+            .catch((err) => {
+                const mensagem = getApiErrorMessage(err, "Não foi possível carregar as estatísticas.");
+                setErroStatus(mensagem);
+                toast.error(mensagem);
+            });
     }, []);
 
     useEffect(() => {
         dashboardService.getFeesByMonth({ mes })
-            .then((res) => setFeesByMonth(res.data))
-            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar o gráfico financeiro.")));
+            .then((res) => {
+                setFeesByMonth(res.data);
+                setMensalCarregado(true);
+                setErroMensal("");
+            })
+            .catch((err) => {
+                const mensagem = getApiErrorMessage(err, "Não foi possível carregar o gráfico financeiro.");
+                setErroMensal(mensagem);
+                toast.error(mensagem);
+            });
     }, [mes]);
 
     useEffect(() => {
@@ -290,8 +309,13 @@ function Home() {
                     .sort((a, b) => new Date(a.dataVencimento) - new Date(b.dataVencimento));
 
                 setParcelasUrgentes(urgentes);
+                setParcelasCarregadas(true);
             })
-            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar as cobranças urgentes.")));
+            .catch((err) => {
+                const mensagem = getApiErrorMessage(err, "Não foi possível carregar as cobranças urgentes.");
+                setErroParcelas(mensagem);
+                toast.error(mensagem);
+            });
     }, []);
 
     const pesquisar = (e) => {
@@ -422,7 +446,11 @@ function Home() {
                     <Link to="/financeiro" className="homeLinkSecao">Ver financeiro</Link>
                 </div>
 
-                {parcelasUrgentes.length === 0 ? (
+                {erroParcelas ? (
+                    <p className="mensagemErro">{erroParcelas}</p>
+                ) : !parcelasCarregadas ? (
+                    <p className="homeCarregandoTexto">Carregando...</p>
+                ) : parcelasUrgentes.length === 0 ? (
                     <EmptyState
                         titulo="Nenhuma parcela urgente."
                         descricao="Todas as parcelas estão em dia nos próximos 7 dias."
@@ -460,13 +488,21 @@ function Home() {
             <section className="baloesTelasAdvogada homeMensal">
                 <h2 className="homeSubtitulo">Honorários contratados por mês</h2>
                 <p className="notaCampo homeNotaMes">Os 6 meses até {rotuloDoMes(mes)}.</p>
-                <GraficoHonorariosPorMes dados={feesByMonth} />
+                {erroMensal ? (
+                    <p className="mensagemErro">{erroMensal}</p>
+                ) : !mensalCarregado ? (
+                    <p className="homeCarregandoTexto">Carregando...</p>
+                ) : (
+                    <GraficoHonorariosPorMes dados={feesByMonth} />
+                )}
             </section>
 
             <section className="baloesTelasAdvogada homeStatus">
                 <h2 className="homeSubtitulo">Distribuição por status</h2>
 
-                {!statusData ? (
+                {erroStatus ? (
+                    <p className="mensagemErro">{erroStatus}</p>
+                ) : !statusData ? (
                     <p className="homeCarregandoTexto">Carregando...</p>
                 ) : (
                     <div className="homeGraficosGrade">

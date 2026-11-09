@@ -206,7 +206,7 @@ function PagamentosLista() {
             {carregando ? (
                 <p className="infoSecundariaDetalhe">Carregando...</p>
             ) : pagamentos.length === 0 ? (
-                <EmptyState titulo="Nenhum pagamento encontrado." descricao="Ajuste os filtros ou registre um novo pagamento." />
+                !erro && <EmptyState titulo="Nenhum pagamento encontrado." descricao="Ajuste os filtros ou registre um novo pagamento." />
             ) : (
                 <ul className="listaParcelas financeiroTabela financeiroTabela--pagamentos">
                     <li className="itemParcela financeiroTabelaCabecalho" aria-hidden="true">

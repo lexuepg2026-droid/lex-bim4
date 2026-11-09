@@ -317,7 +317,7 @@ function Clientes() {
                 {erro && <p className="mensagemErro">{erro}</p>}
 
                 {clientes.length === 0 ? (
-                    <EmptyState titulo="Nenhum cliente encontrado." descricao="Tente ajustar os filtros ou cadastre um novo cliente." />
+                    !erro && <EmptyState titulo="Nenhum cliente encontrado." descricao="Tente ajustar os filtros ou cadastre um novo cliente." />
                 ) : (
                     <div className="tabelaContainer">
                         <table className={`tabela ${modoSelecao ? "tabela--modoSelecao" : ""}`}>

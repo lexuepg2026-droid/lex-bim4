@@ -37,6 +37,9 @@ function ClientesDetalhes() {
     
     const [processos, setProcessos] = useState([]);
     const [carregandoProcessos, setCarregandoProcessos] = useState(true);
+    // A falha não vira "nenhum processo" nem "nenhuma cobrança" (fase R2).
+    const [erroProcessos, setErroProcessos] = useState("");
+    const [erroFichas, setErroFichas] = useState("");
     
     const [fichas, setFichas] = useState(null);
     const [carregandoFichas, setCarregandoFichas] = useState(false);
@@ -58,6 +61,7 @@ function ClientesDetalhes() {
 
     useEffect(() => {
         setCarregandoProcessos(true);
+        setErroProcessos("");
         buscarTudo(processService.listProcesses)
             .then((todos) => {
                 const doCliente = todos.filter((processo) => {
@@ -69,7 +73,10 @@ function ClientesDetalhes() {
                 });
                 setProcessos(doCliente);
             })
-            .catch(() => setProcessos([]))
+            .catch((err) => {
+                setProcessos([]);
+                setErroProcessos(getApiErrorMessage(err, "Não foi possível carregar os processos deste cliente."));
+            })
             .finally(() => setCarregandoProcessos(false));
     }, [id]);
 
@@ -79,7 +86,11 @@ function ClientesDetalhes() {
         setCarregandoFichas(true);
         Promise.all(processos.map((processo) => financeiroService.getFichaDoProcesso(processo._id)))
             .then((respostas) => setFichas(respostas.map((res) => res.data)))
-            .catch(() => setFichas([]))
+            .catch((err) => {
+                // [] impede o efeito de pedir de novo em laço; o erro vai para a tela.
+                setFichas([]);
+                setErroFichas(getApiErrorMessage(err, "Não foi possível carregar o financeiro deste cliente."));
+            })
             .finally(() => setCarregandoFichas(false));
     }, [aba, processos, fichas]);
 
@@ -368,6 +379,8 @@ function ClientesDetalhes() {
                     <div className="secaoForm">
                         {carregandoProcessos ? (
                             <p className="detalheCarregando">Carregando processos…</p>
+                        ) : erroProcessos ? (
+                            <p className="mensagemErro">{erroProcessos}</p>
                         ) : processos.length === 0 ? (
                             <EmptyState titulo="Nenhum processo vinculado." descricao="Esse cliente ainda não está em nenhum processo." />
                         ) : (
@@ -430,6 +443,10 @@ function ClientesDetalhes() {
                     <div className="secaoForm">
                         {carregandoFichas ? (
                             <p className="detalheCarregando">Carregando pagamentos…</p>
+                        ) : erroFichas ? (
+                            <p className="mensagemErro">{erroFichas}</p>
+                        ) : erroProcessos ? (
+                            <p className="mensagemErro">{erroProcessos}</p>
                         ) : !fichas || fichas.length === 0 ? (
                             <EmptyState titulo="Nada por aqui ainda." descricao="Esse cliente não tem cobranças registradas em nenhum processo." />
                         ) : (

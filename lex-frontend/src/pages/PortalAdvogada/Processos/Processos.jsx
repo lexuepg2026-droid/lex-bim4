@@ -351,7 +351,7 @@ function Processos() {
                 {erro && <p className="mensagemErro">{erro}</p>}
 
                 {processos.length === 0 ? (
-                    <EmptyState titulo="Nenhum processo encontrado." descricao="Tente ajustar os filtros ou cadastre um novo processo." />
+                    !erro && <EmptyState titulo="Nenhum processo encontrado." descricao="Tente ajustar os filtros ou cadastre um novo processo." />
                 ) : (
                     chavesOrdenadas.map((chave) => {
                         const processosDoGrupo = grupos[chave];

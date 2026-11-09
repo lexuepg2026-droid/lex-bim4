@@ -117,7 +117,7 @@ function MeusModelos() {
                             {carregando && modelos.length === 0 ? (
                                 <p className="infoSecundariaDetalhe">Carregando...</p>
                             ) : modelos.length === 0 ? (
-                                <EmptyState titulo="Nenhum modelo cadastrado ainda." descricao="Clique em &quot;+ Novo modelo&quot; para montar o primeiro." />
+                                !erro && <EmptyState titulo="Nenhum modelo cadastrado ainda." descricao="Clique em &quot;+ Novo modelo&quot; para montar o primeiro." />
                             ) : (
                                 <ul className="listaParcelas">
                                     {modelos.map((modelo) => (

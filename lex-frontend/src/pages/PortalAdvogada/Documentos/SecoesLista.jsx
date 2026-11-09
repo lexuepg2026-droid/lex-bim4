@@ -169,7 +169,7 @@ function SecoesLista() {
             {carregando && secoes.length === 0 ? (
                 <p className="infoSecundariaDetalhe">Carregando...</p>
             ) : secoes.length === 0 ? (
-                <EmptyState titulo="Nenhuma seção encontrada." descricao="Ajuste a busca ou crie uma nova seção." />
+                !erro && <EmptyState titulo="Nenhuma seção encontrada." descricao="Ajuste a busca ou crie uma nova seção." />
             ) : (
                 <ul className="listaParcelas">
                     {secoes.map((secao) => (

@@ -224,7 +224,7 @@ function HonorariosLista() {
             {carregando ? (
                 <p className="infoSecundariaDetalhe">Carregando...</p>
             ) : honorarios.length === 0 ? (
-                <EmptyState titulo="Nenhum honorário encontrado." descricao="Ajuste os filtros ou cadastre um novo honorário." />
+                !erro && <EmptyState titulo="Nenhum honorário encontrado." descricao="Ajuste os filtros ou cadastre um novo honorário." />
             ) : (
                 <ul className="listaParcelas financeiroTabela financeiroTabela--honorarios">
                     <li className="itemParcela financeiroTabelaCabecalho" aria-hidden="true">
