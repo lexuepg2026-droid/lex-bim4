@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { usePortalAuth } from "../../../contexts/PortalAuthContext";
@@ -62,7 +62,14 @@ function ProcessoPortal() {
         carregar();
     }, [processoId]);
 
+    // Guarda de comportamento (R4): dois cliques no mesmo ciclo passavam pelo
+    // `disabled` antes de o React redesenhar e gravavam duas confirmações. O
+    // desenho do botão não muda.
+    const enviandoConfirmacao = useRef(false);
+
     const confirmarLeitura = async () => {
+        if (enviandoConfirmacao.current) return;
+        enviandoConfirmacao.current = true;
         setConfirmando(true);
         setErro("");
 
@@ -73,6 +80,7 @@ function ProcessoPortal() {
         } catch (err) {
             setErro(getApiErrorMessage(err, "Não foi possível registrar a confirmação."));
         } finally {
+            enviandoConfirmacao.current = false;
             setConfirmando(false);
         }
     };

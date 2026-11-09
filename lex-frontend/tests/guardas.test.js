@@ -83,3 +83,27 @@ describe("as telas da regeração e da montagem conferem a montagem depois do aw
     assert.equal(semGuardaDepoisDoAwait(boa).length, 0);
   });
 });
+
+// R4: o histórico de produção mostrou duas confirmações no mesmo minuto. O
+// `disabled={confirmando}` só vale depois do próximo desenho; dois cliques no
+// mesmo ciclo (reproduzido no Chrome headless: 2 → 4) gravavam duas vezes.
+describe("portal: a confirmação de leitura grava uma vez por envio", () => {
+  const codigo = ler("src/pages/PortalClientes/Processo/ProcessoPortal.jsx");
+  const corpo = codigo.slice(codigo.indexOf("const confirmarLeitura"), codigo.indexOf("const baixar"));
+
+  test("a guarda por ref vem antes de qualquer await", () => {
+    assert.match(codigo, /const enviandoConfirmacao = useRef\(false\);/);
+    const guarda = corpo.indexOf("if (enviandoConfirmacao.current) return;");
+    const marca = corpo.indexOf("enviandoConfirmacao.current = true;");
+    const espera = corpo.indexOf("await ");
+    assert.ok(guarda > -1 && marca > guarda && espera > marca, "a guarda e a marca precisam vir antes do envio");
+  });
+
+  test("a guarda é solta no finally, também quando o envio falha", () => {
+    assert.match(corpo, /finally \{\s*enviandoConfirmacao\.current = false;/);
+  });
+
+  test("o botão continua o mesmo (desabilitado durante o envio, sem classe nova)", () => {
+    assert.match(codigo, /className="button buttonConsultar"\s*onClick=\{confirmarLeitura\}\s*disabled=\{confirmando\}/);
+  });
+});
