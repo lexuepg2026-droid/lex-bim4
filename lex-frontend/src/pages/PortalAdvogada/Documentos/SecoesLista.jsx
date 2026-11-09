@@ -67,7 +67,7 @@ function SecoesLista() {
     useEffect(() => {
         documentService.listarVariaveis()
             .then((res) => setCatalogo(res.data.grupos ?? []))
-            .catch(() => {});
+            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar o catálogo de variáveis.")));
     }, []);
 
     const abrirNovo = () => {

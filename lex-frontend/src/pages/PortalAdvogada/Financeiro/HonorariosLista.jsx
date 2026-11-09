@@ -95,7 +95,7 @@ function HonorariosLista() {
     useEffect(() => {
         buscarTudo(processService.listProcesses)
             .then(setProcessos)
-            .catch(() => {});
+            .catch((err) => toast.error(getFinancialErrorMessage(err, "Não foi possível carregar os processos.")));
     }, []);
 
     const abrirNovo = () => {

@@ -69,7 +69,7 @@ function ParcelasLista() {
     useEffect(() => {
         buscarTudo(feeService.listFees)
             .then(setHonorarios)
-            .catch(() => {});
+            .catch((err) => toast.error(getFinancialErrorMessage(err, "Não foi possível carregar os honorários.")));
     }, []);
 
     const abrirNovo = () => {
@@ -101,6 +101,8 @@ function ParcelasLista() {
                 const proximo = lista.reduce((maior, p) => Math.max(maior, Number(p.numeroParcela) || 0), 0) + 1;
                 setForm((prev) => (prev && !prev._id && prev.feeId === feeId ? { ...prev, numeroParcela: String(proximo) } : prev));
             })
+            // Só a sugestão do próximo número: sem ela a advogada digita. Falha de
+            // servidor ou de rede já aparece no toast global (DEC-084).
             .catch(() => {});
     };
 

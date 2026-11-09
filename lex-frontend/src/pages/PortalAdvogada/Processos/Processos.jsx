@@ -134,7 +134,7 @@ function Processos() {
     useEffect(() => {
         processService.listarTiposDeAcao()
             .then((res) => setTiposDeAcao(res.data.data ?? []))
-            .catch(() => {});
+            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar os tipos de ação.")));
     }, []);
 
     const confirmarExclusao = async (id) => {

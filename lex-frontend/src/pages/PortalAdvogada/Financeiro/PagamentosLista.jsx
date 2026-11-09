@@ -80,7 +80,7 @@ function PagamentosLista() {
     useEffect(() => {
         buscarTudo(feeService.listFees)
             .then(setHonorarios)
-            .catch(() => {});
+            .catch((err) => toast.error(getFinancialErrorMessage(err, "Não foi possível carregar os honorários.")));
     }, []);
 
     const abrirNovo = () => {

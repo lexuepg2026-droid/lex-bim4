@@ -63,13 +63,13 @@ function ProcessosForm() {
     useEffect(() => {
         processService.listarTiposDeAcao()
             .then((res) => setTiposDeAcao(res.data.data ?? []))
-            .catch(() => {});
+            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar os tipos de ação.")));
     }, []);
 
     useEffect(() => {
         buscarTudo(clientService.getAllClients)
             .then(setClientes)
-            .catch(() => {});
+            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar os clientes.")));
     }, []);
 
     useEffect(() => {
