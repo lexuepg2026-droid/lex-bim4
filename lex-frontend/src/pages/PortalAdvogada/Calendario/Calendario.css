@@ -1225,3 +1225,16 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* Celular (R4): com o seletor de situação (R3), a linha da direita não cabia e
+   o "+" saía do cartão a 360 e 390 px. Abaixo de 640 px ela quebra, e o seletor
+   ocupa a primeira linha inteira. */
+@media (max-width: 640px) {
+    .calendarioCabecalhoDireita {
+        flex-wrap: wrap;
+    }
+
+    .calendarioCabecalhoDireita .calendarioSelectNav {
+        flex: 1 1 100%;
+    }
+}
