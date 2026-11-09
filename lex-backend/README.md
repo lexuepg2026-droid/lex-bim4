@@ -1,0 +1,436 @@
+# LEX — Guia de Setup Local (Equipe)
+
+Sistema de gestão para prática jurídica (PWA). Backend em Node.js + Express + Mongoose (MongoDB Atlas); frontend em React + Vite.
+
+Este repositório contém o **backend**. O frontend vive em um repositório separado:
+**[lexuepg2026-droid/LEX-front](https://github.com/lexuepg2026-droid/LEX-front)**.
+
+Este guia leva do clone até o login com a conta de teste, cobrindo os dois repositórios. Siga na ordem.
+
+---
+
+## 1. Pré-requisitos
+
+- **Node.js 20+** e **npm** (o projeto foi validado em Node 20 / npm 10).
+- Acesso aos dois repositórios da equipe: `LEX-back` (backend, este aqui) e `LEX-front`.
+- Acesso ao cluster **MongoDB Atlas** do projeto (string de conexão + IP liberado).
+
+O projeto é dividido em **dois repositórios independentes** (não é monorepo):
+
+```
+lexuepg2026-droid/LEX-back             # este repositório — API Express + Mongoose
+lexuepg2026-droid/LEX-front            # React + Vite
+```
+
+Cada um tem seu próprio `package.json` e `node_modules` — clone os dois em pastas separadas e instale as dependências em cada um.
+
+---
+
+## 2. Clonar este repositório (backend)
+
+```bash
+git clone https://github.com/lexuepg2026-droid/LEX-back.git
+cd LEX-back
+```
+
+---
+
+## 3. Backend
+
+### 3.1. Instalar dependências
+
+```bash
+npm install
+```
+
+### 3.2. Criar o arquivo `.env`
+
+O `.env` **não vem no repositório** (está no `.gitignore`). Copie o modelo e preencha:
+
+```bash
+cp .env.example .env
+```
+
+Os dois segredos você **gera na sua máquina** — não peça a ninguém e não
+reaproveite de outro ambiente:
+
+```bash
+openssl rand -hex 32   # cole em JWT_SECRET
+openssl rand -hex 32   # rode DE NOVO e cole em JWT_PORTAL_SECRET
+```
+
+Os valores precisam ser **diferentes entre si**. O `.env.example` já vem com
+placeholders (`<gere-com-openssl-rand-hex-32>`) no lugar de campos vazios,
+para ficar claro o que falta preencher.
+
+Preencha o `.env`:
+
+| Variável      | Descrição                                                                 |
+|---------------|---------------------------------------------------------------------------|
+| `MONGO_URI`   | String de conexão do cluster Atlas (`mongodb+srv://...`). Peça ao responsável. |
+| `JWT_SECRET`  | Segredo para assinar os tokens JWT **da advogada**. Use uma string longa e aleatória. |
+| `JWT_PORTAL_SECRET` | Segredo para assinar os tokens **do portal do cliente**. Obrigatório, e precisa ser **diferente** do `JWT_SECRET`. |
+| `PORT`        | Porta do backend. Padrão `3001`.                                          |
+| `CORS_ORIGIN` | URL(s) do frontend permitidas. Padrão `http://localhost:5173,http://localhost:5174`. |
+| `NODE_ENV`    | Deixe `development` no ambiente local.                                     |
+| `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `EMAIL_FROM`, `APP_URL` | **Opcionais em desenvolvimento.** Enviam o e-mail de confirmação de conta e o de recuperação de senha. Em branco, o e-mail **não é enviado** e o **link aparece no console do backend** (`[lex:email] ...`) — copie e abra. Em produção são necessárias; ver `.env.production.example`. |
+
+> ⚠️ **Não** deixe `NODE_ENV=production` no `.env` local nem exportado no shell: em produção o cookie de sessão vira `Secure` e o navegador não o grava em `http://localhost`, quebrando o login silenciosamente.
+
+> ⚠️ **`JWT_PORTAL_SECRET` derruba a subida se faltar ou se for igual ao
+> `JWT_SECRET`**, com mensagem dizendo o motivo. Não é chatice: nome de cookie
+> não é fronteira de segurança. Com o mesmo segredo nos dois domínios, um token
+> de portal renomeado para `lex-token` passa na verificação de assinatura do
+> middleware da advogada, e a única barreira restante vira uma condição de `if`.
+
+#### Rate limit dos endpoints de autenticação
+
+Cadastro, login e troca de senha têm um balde de tentativas cada, por IP. Os
+tetos são configuráveis, e **os valores default são os de produção** — não
+configurar nada mantém exatamente o comportamento que já valia:
+
+| Variável                    | Default | Endpoint protegido        |
+|-----------------------------|---------|---------------------------|
+| `RATE_LIMIT_CADASTRO`       | `5`     | `POST /api/auth/register` |
+| `RATE_LIMIT_LOGIN`          | `10`    | `POST /api/auth/login`    |
+| `RATE_LIMIT_SENHA`          | `5`     | `POST /api/auth/alterar-senha` |
+| `RATE_LIMIT_JANELA_MINUTOS` | `15`    | janela de todos os baldes |
+| `RATE_LIMIT_PORTAL_LOGIN`   | `5`     | `POST /api/portal/login`  |
+
+O balde do portal é **independente** dos outros três: estourar o do portal não
+trava o login da advogada, e vice-versa. O teto é mais apertado que o do login
+da advogada de propósito — o código de acesso circula por WhatsApp e por papel,
+e a senha é o único fator.
+
+Fora de produção (`NODE_ENV != "production"`) cada teto é **multiplicado por
+20**. Testar o cadastro seis vezes seguidas em desenvolvimento é rotina, e
+ficar 15 minutos travado no meio de uma sessão custa mais do que protege numa
+base local. Em produção o multiplicador não se aplica: valem os números da
+tabela.
+
+### 3.3. Liberar seu IP no MongoDB Atlas
+
+No painel do Atlas → **Network Access** → confirme que seu IP (ou `0.0.0.0/0` para o ambiente de dev da equipe) está liberado. Sem isso, o backend não conecta e encerra na inicialização.
+
+### 3.4. Popular a conta de demonstração (seed da 3ª banca)
+
+> ⚠️ **O `.env` local aponta para o banco de PRODUÇÃO (`lex_prod`).** Todo seed
+> abaixo escolhe o banco por `LEX_BANCO=<nome>` na linha de comando — sem
+> editar o `.env` — e confere o nome real do banco conectado contra `--banco`.
+
+```bash
+LEX_BANCO=lex_test npm run seed:banca3 -- --banco lex_test --confirmar-reset
+```
+
+O seed **apaga as 16 coleções** do banco alvo (`deleteMany`, coleção por
+coleção; nada de `dropDatabase`, nenhum índice é apagado) e recria o cenário da
+demonstração **pela API da aplicação**, rodando no mesmo processo — cada
+registro passa por rota, validação e service, como um clique na tela. É
+idempotente: rodar duas vezes deixa o mesmo cenário. Recusa rodar sem
+`--confirmar-reset` ou se o banco conectado não for o de `--banco`.
+
+As datas são relativas a **05/10/2026** (o dia da banca) e calculadas quando o
+seed roda; `--hoje AAAA-MM-DD` troca a âncora. O seed recusa rodar se alguma
+parcela vencer entre hoje e a âncora (o status "vencido" é gravado, não lido na
+hora). Cenário, roteiro e riscos: `RELATORIO-SEED-BANCA3.md` (DEC-065).
+
+**Advogada:**
+
+- **E-mail:** `lexuepg2026@gmail.com`
+- **Senha:** `LexBanca2026`
+
+A conta nasce com o e-mail **não confirmado** (DEC-064), para o aviso aparecer.
+O seed não envia e-mail nenhum.
+
+**Portal do cliente** (Mariana Kloster Ribeiro — `lexuepg2026+portal@gmail.com`):
+
+- **Código de acesso (pessoal):** `LEX-2026-BANC`
+- **Senha:** `LexBanca2026`
+
+O login do portal é **código de acesso + senha**, e não e-mail (DEC-029). Desde
+a Fase 2.5 o código é **da pessoa** (DEC-089): um código e uma senha abrem
+todos os processos que a advogada **liberou** para ela, processo a processo
+(DEC-091). No seed, a Mariana está em dois processos e só um está liberado — ela
+entra e vai direto para ele; liberar o segundo na tela da advogada (detalhe do
+processo "Inventário de Ernesto Wosch" → participantes) faz a lista aparecer.
+
+A senha já é a **própria** do cliente: o seed fez a troca obrigatória do
+primeiro acesso pela rota do portal, então a tela de troca não aparece. O limite
+é de **5 tentativas de login no portal por IP a cada 15 minutos**.
+
+> **Num banco migrado** (`npm run migrar:portal-pessoal`, o caminho do
+> `lex_prod` de antes da 2.5), o código pessoal é o que a migração sorteou, e
+> **não** o de cima: o antigo era do vínculo, e código de vínculo não vira
+> código pessoal (DEC-090). Ele aparece na tela da advogada: Clientes → Mariana
+> → **Acesso ao portal**.
+
+Os outros dois comandos do seed da banca:
+
+```bash
+# Percorre o fluxo pela API (ESCREVE no banco: rode o seed de novo depois)
+LEX_BANCO=lex_test npm run smoke:banca3 -- --banco lex_test
+
+# Só leitura: contagem e assinatura do conteúdo de cada coleção; com --url,
+# um login da advogada na API publicada; com --portal, um login no portal
+LEX_BANCO=lex_prod npm run conferir:banca3 -- --banco lex_prod --url https://lex-uepg-app.onrender.com --portal
+```
+
+#### Seeds antigos — legado, não usar na banca
+
+`seed:demo`, `seed:demo:volume`, `seed:fresh` e `seed:fresh:volume` continuam
+no repositório e **ainda rodam** sobre o schema atual (conferido num MongoDB
+local em 03/10/2026), mas estão **obsoletos para a demonstração**:
+
+- leem o banco da `MONGO_URI` do `.env` — hoje, **produção** —, sem como
+  escolher outro sem editar o `.env`;
+- `reset:dev` (dentro de `seed:fresh`) usa `dropCollection`, que **apaga os
+  índices** junto;
+- o seed curado cria advogada, clientes, seções, modelos e confirmações por
+  `Model.create`, sem passar pela validação; grava telefone e CEP **com
+  máscara** (a tela grava só dígitos); cria 8 documentos de **upload** com URLs
+  fictícias (`demo.lex.dev`), que a interface não usa (decisão 16);
+- os 10 números de processo do seed curado têm o **dígito verificador CNJ
+  inválido**.
+
+A conta deles era `demo@lex.dev` / `Lex123456`, com as senhas de portal
+`Portal2026` (provisória) e `MinhaSenha2026` (própria).
+
+### 3.5. Subir o backend
+
+```bash
+npm run dev
+```
+
+API em `http://localhost:3001`. Ao subir com sucesso o console mostra `MongoDB conectado: ...` e `Server running on port 3001`.
+
+---
+
+### 3.6. Scripts disponíveis
+
+| Script | O que faz |
+|--------|-----------|
+| `npm run dev` | Sobe a API com `nodemon` (reload automático), porta 3001. |
+| `npm start` | Sobe a API com `node` puro (sem reload) — uso mais próximo de produção. |
+| `npm run seed:banca3` | **O seed da demonstração (DEC-065).** Limpa as 16 coleções do banco de `LEX_BANCO` e recria o cenário da 3ª banca pela API. Exige `--banco <nome>` igual ao banco conectado e `--confirmar-reset`. Ver 3.4. |
+| `npm run smoke:banca3` | Percorre o fluxo da banca pela API sobre o cenário (8 passos). Escreve; recusa `lex_prod`. |
+| `npm run conferir:banca3` | Só leitura: contagem e assinatura de cada coleção; `--url` e `--portal` fazem um login na API publicada. |
+| `npm run seed:fresh` | *Legado (ver 3.4).* Derruba a base e recria tudo do zero (`reset:dev` + `seed:demo`). |
+| `npm run seed:demo` | *Legado (ver 3.4).* Cria a conta demo e a massa de dados de teste. Recusa rodar se a demo já existir. |
+| `npm run seed:demo:clean` | Remove a conta demo e todos os dados dela. |
+| `npm run seed:demo:volume` | *Legado (ver 3.4).* Como `seed:demo`, e depois gera o **volume realista** (~260 clientes, ~300 processos, ~370 honorários, ~1.000 parcelas, ~600 pagamentos, ~130 eventos, ~100 documentos) pelos serviços reais. Determinístico (semente fixa). Exige as tabelas de domínio do frontend (`../lex-frontend/public/tabelas`, ou `LEX_TABELAS_DIR`). Contra banco remoto pede confirmação do nome do banco. Para recriar só a conta demo: `npm run seed:demo:clean && npm run seed:demo:volume`. |
+| `npm run seed:fresh:volume` | `reset:dev` + `seed:demo:volume`. **Apaga o banco inteiro**, inclusive contas de outras pessoas. |
+| `npm run reset:dev` | Derruba as coleções de desenvolvimento (`users`, `clients`, `processes`, `fees`, `installments`, `payments`, `documents`). Abortado se `NODE_ENV=production`. Use quando a base local tiver dados antigos/incompatíveis com o schema atual. |
+
+> Fluxo para recriar a base do zero: `LEX_BANCO=<banco> npm run seed:banca3 -- --banco <banco> --confirmar-reset`.
+
+### 3.7. Rodar a suíte de testes (`.env.test`)
+
+A suíte usa **MongoDB de verdade**, num banco **separado** da base de
+demonstração: transação na criação de processo, índice único parcial,
+`populate` e `$set` não têm substituto em memória sem instalar dependência —
+e o projeto não instala nenhuma.
+
+```bash
+cp .env.test.example .env.test
+```
+
+| Variável | O que é |
+|---|---|
+| `MONGO_URI_TEST` | Banco **exclusivo da suíte**. O nome precisa conter `test` e **não** pode ser `lex`. |
+| `JWT_SECRET` / `JWT_PORTAL_SECRET` | Valores quaisquer, só para a suíte assinar tokens. Continuam precisando ser **diferentes entre si**. |
+
+> ⚠️ **A suíte APAGA coleções** em todo `before` e `after`. Duas guardas em
+> `tests/helpers/env.js` abortam a execução antes de qualquer conexão se o
+> banco se chamar `lex` (a base da banca) ou se o nome não contiver `test`.
+> Apontar `MONGO_URI_TEST` para a base de demonstração destrói o seed.
+
+```bash
+npm test
+```
+
+Esperado: **tudo verde**, em ~3 minutos (a suíte é serial, contra Atlas real).
+Se a saída trouxer `bad auth : authentication failed`, o usuário/senha do
+`MONGO_URI_TEST` está errado — não é problema do código.
+
+---
+
+## 4. Frontend (repositório separado)
+
+Clone o repositório do frontend **em outra pasta**, ao lado deste (não precisa estar dentro de `LEX/`):
+
+```bash
+git clone https://github.com/lexuepg2026-droid/LEX-front.git
+cd LEX-front
+npm install
+npm test      # suíte do frontend: sem DOM, sem banco, roda em segundos
+npm run dev
+```
+
+O frontend **não tem `.env`**: a URL da API é fixa em `src/api/axiosConfig.js`.
+
+App em `http://localhost:5173`. Requer o backend deste repositório já rodando em `http://localhost:3001` (passo 3.5).
+
+> O frontend fala com o backend em `http://localhost:3001/api` (fixo em `src/api/axiosConfig.js`, no repo do frontend). Se você mudar a `PORT` do backend, ajuste lá também.
+
+---
+
+## 5. Acessar
+
+1. Abra `http://localhost:5173`.
+2. Faça login com:
+   - **E-mail:** `lexuepg2026@gmail.com`
+   - **Senha:** `LexBanca2026`
+3. O sistema redireciona para o dashboard com os dados populados.
+
+---
+
+## 5.1. Lacunas nos modelos de documento
+
+Nem tudo num documento sai do cadastro. Há trechos que a advogada preenche
+depois — o valor combinado na audiência, o nome de uma testemunha, a data que
+ainda depende do cartório.
+
+**Para deixar um espaço a preencher, escreva `[...]` no texto da seção.**
+
+```
+O pagamento será realizado em [...] parcelas, a combinar entre as partes.
+```
+
+O sistema também reconhece, por compatibilidade, linhas de três ou mais
+sublinhados (`___`), usadas para preencher à caneta depois de impresso.
+
+Depois de gerar o documento, o preview devolve a lista de lacunas encontradas,
+com a posição e o trecho ao redor de cada uma.
+
+### Lacuna não é pendência
+
+São coisas diferentes, e a distinção importa:
+
+| | Lacuna | Pendência |
+|---|---|---|
+| O que é | Espaço deixado de propósito (`[...]`) | Variável do catálogo sem valor no cadastro |
+| Exemplo | `em [...] parcelas` | `{{profissaoCliente}}` com o cliente sem profissão |
+| Efeito na geração | Nenhum — o documento é gerado | **Bloqueia** com HTTP 422 |
+| Efeito no download | Nenhum — o arquivo é baixado | — |
+| Como resolver | Preencher no texto final, ou à caneta | Completar o cadastro e gerar de novo |
+
+Lacuna é aviso. O download **nunca** é bloqueado por ela: o documento está
+exatamente como foi pedido.
+
+## 5.2. Valores monetários usam espaço não-separável
+
+O formatador `moeda` (`src/utils/templateFormatters.js`) devolve
+`R$ 3.000,00` — o caractere entre `R$` e o número é um **espaço
+não-separável** (U+00A0), não um espaço comum (U+0020). Ele vem do
+`toLocaleString("pt-BR", { style: "currency" })` do próprio Node, e é o
+comportamento correto: sem ele, a quebra de linha do PDF pode separar o `R$`
+do valor e deixar o símbolo pendurado no fim de uma linha e o número no
+começo da seguinte, no meio de uma cláusula de honorários.
+
+**Isso é intencional e não deve ser "corrigido".** As consequências práticas:
+
+- Ao **comparar** strings de valor em script ou teste, `"R$ 3.000,00"` digitado
+  à mão **não** é igual ao que o formatador produz. Normalize a comparação
+  antes de comparar:
+  ```js
+  const normalizar = (s) => s.replace(/ /g, " ");
+  ```
+- Ao **buscar** por um valor colado da tela, o mesmo cuidado vale.
+- Na renderização (PDF e DOCX) nada precisa ser feito: os dois formatos
+  respeitam o U+00A0 nativamente, que é justamente o motivo de ele estar lá.
+
+---
+
+## 6. Solução de problemas
+
+| Sintoma | Causa provável | Como resolver |
+|--------|----------------|---------------|
+| Login não entra, erro de CORS no console do browser | Porta do Vite (5173) não bate com `CORS_ORIGIN` | Garanta `CORS_ORIGIN=http://localhost:5173,http://localhost:5174` no `.env` e reinicie o backend |
+| Backend encerra com "Erro ao conectar no MongoDB" | IP não liberado no Atlas, ou `MONGO_URI` errada/ausente | Libere o IP em Network Access; confira a `MONGO_URI` |
+| Login retorna 500 "JWT_SECRET não configurado" | `JWT_SECRET` ausente no `.env` | Preencha `JWT_SECRET` |
+| "Muitas tentativas de cadastro/login/troca de senha..." | Cada rota tem seu próprio balde por IP, em 15 min: `/register` 5, `/login` 10, `/alterar-senha` 5. A mensagem diz qual limite estourou. | Aguarde 15 min ou reinicie o backend |
+| Login retorna 200 mas a sessão não persiste | Cookie saiu como `Secure` (algum `NODE_ENV=production` no ambiente) | Garanta `NODE_ENV=development` (ou não defina) no ambiente local |
+| `seed:demo` diz que já existe | Conta demo já criada | Rode `npm run seed:demo:clean` antes |
+| **No ar:** a primeira tela demora ~1 min e depois tudo fica rápido | O Web Service gratuito hibernou (15 min sem requisição) | Normal. Abra o sistema alguns minutos antes de demonstrar (seção 8) |
+| **No ar:** login responde 200 mas a sessão não persiste | A chamada saiu para o domínio da API, e não para o do site — o cookie ficou no domínio errado | Confira `VITE_API_URL=/api` no build do site e as regras de rewrite (seção 8) |
+| **No ar:** F5 numa tela interna devolve 404 | Falta a regra de rewrite `/*` → `/index.html` no site | Acrescente-a **depois** da regra de `/api/*` (a ordem importa) |
+| **No ar:** "Muitas tentativas..." com pouquíssimo uso | `trust proxy` desligado: o rate limit conta todo mundo como um IP só | `app.set("trust proxy", 1)` em `src/app.js` (seção 8) |
+
+---
+
+## 7. Resumo dos comandos
+
+```bash
+# Backend (este repositório)
+git clone https://github.com/lexuepg2026-droid/LEX-back.git
+cd LEX-back
+npm install
+cp .env.example .env      # depois preencha MONGO_URI e JWT_SECRET
+LEX_BANCO=lex_test npm run seed:banca3 -- --banco lex_test --confirmar-reset
+npm run dev               # porta 3001 (dev, com reload); ou "npm start" sem reload
+
+# Frontend (outro repositório, outro terminal/pasta)
+git clone https://github.com/lexuepg2026-droid/LEX-front.git
+cd LEX-front
+npm install
+npm run dev               # porta 5173
+
+# Login: lexuepg2026@gmail.com / LexBanca2026  ·  portal: LEX-2026-BANC / LexBanca2026
+```
+
+---
+
+## 8. Publicar no Render (D-1)
+
+> **O guia passo a passo do deploy está no README do repositório do frontend**
+> — [lexuepg2026-droid/LEX-front](https://github.com/lexuepg2026-droid/LEX-front),
+> seção *"Deploy no Render"* —, junto do `render.yaml` que descreve os dois
+> serviços. Ele é o roteiro do dia, escrito para ser seguido sem ler código.
+>
+> Aqui fica só o que é deste lado.
+
+### O que a API é, no Render
+
+Um **Web Service** no plano gratuito, com:
+
+| Campo | Valor |
+|---|---|
+| Build Command | `npm ci` |
+| Start Command | `npm start` |
+| Health Check Path | `/` |
+| Runtime | Node — a versão vem de `engines.node` no `package.json` |
+
+### As variáveis do serviço
+
+Estão em **`.env.production.example`**, uma a uma, com o que cada uma faz.
+Nenhum valor real mora lá — e não deve morar: a fase inteira mexe nos arquivos
+que carregam segredo, e um valor commitado exige **rotação**, porque histórico
+publicado não se reescreve.
+
+Três coisas que valem repetir aqui, porque são as que quebram o deploy:
+
+- **`NODE_ENV=production`** liga o cookie `secure`, o HSTS (passo 142) e o rate
+  limit real (passo 85). Sem ele, o sistema sobe "funcionando" e sem nenhuma
+  dessas proteções;
+- **`JWT_PORTAL_SECRET` precisa ser diferente do `JWT_SECRET`** — a aplicação se
+  recusa a subir se forem iguais, e a razão está em `config/portalSecret.js`;
+- **não configure `PORT`.** O Render injeta a porta; fixá-la faz o health check
+  nunca passar, e o deploy fica parado em "in progress" sem mensagem de erro.
+
+### O que fica atrás do proxy do Render
+
+Todo request chega com o IP do proxy. `app.set("trust proxy", 1)` — **um salto,
+nunca `true`** — é o que faz o `express-rate-limit` agrupar pelo IP real de quem
+chamou. Com `true`, o Express acreditaria no `X-Forwarded-For` inteiro,
+inclusive no trecho que o cliente escreve: trocar o prefixo forjado a cada
+requisição renderia um balde novo toda vez, e o limite viraria enfeite.
+
+Há teste dos dois lados em `tests/infra/producao.test.js`: o valor configurado, e
+o comportamento (prefixo forjado **não** cria balde novo).
+
+### A hibernação, e o que ela significa numa demonstração
+
+O Web Service gratuito **dorme após 15 minutos** sem requisição e leva cerca de
+um minuto para acordar. **Abra o sistema alguns minutos antes de qualquer
+apresentação.** O site (estático) não dorme — quem dorme é a API, então o
+sintoma é o app abrir normal e a primeira consulta demorar.

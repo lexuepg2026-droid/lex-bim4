@@ -1,0 +1,47 @@
+{
+  "name": "lex",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20.0.0 <21.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed:demo": "NODE_ENV=development node scripts/seedDemo.js",
+    "seed:fresh": "npm run reset:dev && npm run seed:demo",
+    "seed:demo:clean": "NODE_ENV=development node scripts/seedDemo.js --clean",
+    "seed:demo:volume": "NODE_ENV=development node scripts/seedDemo.js --volume",
+    "seed:fresh:volume": "npm run reset:dev && npm run seed:demo:volume",
+    "seed:banca3": "node scripts/banca3/seedBanca3.js",
+    "smoke:banca3": "node scripts/banca3/smokeBanca3.js",
+    "conferir:banca3": "node scripts/banca3/conferirBanca3.js",
+    "migrar:portal-pessoal": "node scripts/migrarPortalPessoal.js",
+    "reset:dev": "NODE_ENV=development node scripts/resetDev.js",
+    "auditar:orfaos": "node scripts/auditarOrfaos.js",
+    "test": "node --test --test-concurrency=1 --test-timeout=120000 tests/",
+    "test:watch": "node --test --watch --test-concurrency=1 --test-timeout=120000 tests/",
+    "migrar:fase": "node scripts/migrarFaseProcesso.js",
+    "migrar:nome-exibicao": "node scripts/migrarNomeExibicao.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "docx": "^9.7.1",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^9.9.2",
+    "pdfmake": "^0.3.11"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

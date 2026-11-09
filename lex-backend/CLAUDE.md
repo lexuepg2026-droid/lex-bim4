@@ -1,0 +1,7079 @@
+# CLAUDE.md — LEX Backend
+
+> Contexto técnico fixo para sessões com Claude Code.
+> Leia este arquivo antes de qualquer análise ou edição.
+>
+> **Artefato de trabalho, não documentação da banca.** A entrega acadêmica
+> (anteprojeto, monografia, apresentação) vive fora do repositório e não se
+> mistura com este arquivo.
+
+---
+
+## Nome do projeto
+
+**LEX — Sistema de Gerenciamento de Advocacia**
+
+TCC de Engenharia de Software na UEPG, feito para uma advogada autônoma real.
+O sistema é de **uma** advogada: quando o texto tem gênero, é o feminino.
+
+---
+
+## Objetivo
+
+PWA multi-tenant para gestão de clientes, processos, documentos, honorários,
+parcelas e pagamentos de um escritório de advocacia. Cada usuária autenticada
+gerencia exclusivamente os seus próprios dados.
+
+---
+
+## Stack
+
+| Camada      | Tecnologia                          |
+|-------------|-------------------------------------|
+| Runtime     | Node.js (ESM — `"type": "module"`)  |
+| Framework   | Express 5                           |
+| Banco       | MongoDB Atlas via Mongoose 9        |
+| Auth        | JWT (jsonwebtoken) + bcryptjs, cookie httpOnly `lex-token` |
+| Rate limit  | express-rate-limit                  |
+| PDF         | pdfmake `0.3.11`                    |
+| DOCX        | docx                                |
+| Config      | dotenv                              |
+| Dev         | nodemon                             |
+
+Variáveis de ambiente: `PORT`, `MONGO_URI`, `JWT_SECRET`,
+**`JWT_PORTAL_SECRET`**, `CORS_ORIGIN`, `RATE_LIMIT_JANELA_MINUTOS` e os tetos
+por operação (inclusive `RATE_LIMIT_PORTAL_LOGIN`) — definidas em `.env` (nunca
+versionado). Ver `.env.example`. **A-2 (DEC-064)** acrescentou `EMAIL_PROVIDER`,
+`EMAIL_API_KEY`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `APP_URL` e três tetos
+(`RATE_LIMIT_RECUPERACAO`, `RATE_LIMIT_REENVIO`, `RATE_LIMIT_TOKEN`) — todas
+listadas em `.env.production.example`, que um teste obriga a ficar completo.
+
+**`JWT_PORTAL_SECRET` é obrigatório e precisa ser diferente do `JWT_SECRET`.**
+`src/app.js` chama `assertSegredoDoPortal()` na carga e **derruba o processo**
+se faltar ou se forem iguais. Ver DEC-029 mais abaixo.
+
+**`pdfmake` fica na linha 0.3.x.** A 0.4 mudou a API de fontes e não traz nada
+que esta fase precise. Não subir sem motivo escrito.
+
+---
+
+## Arquitetura
+
+```
+src/
+  app.js               Express app (middlewares + rotas)
+  server.js            Entry point (conecta ao banco e sobe o servidor)
+  config/
+    db.js                    Conexão com o MongoDB
+    templateVariables.js     Catálogo FECHADO de variáveis (48 chaves)
+    variableLabels.js        Rótulos e descrições do catálogo + guarda
+  routes/              Define endpoints e aplica authMiddleware
+  controllers/         Recebem req/res/next, chamam o service, respondem HTTP
+  services/            Lógica de negócio, queries, lançam erros com statusCode
+  models/              Schemas Mongoose
+    shared/enderecoSchema.js Endereço reaproveitado por User e Client
+  validations/         Funções puras que retornam arrays/objetos de erros
+  utils/               Parser de template, formatadores, lacunas, extenso, texto
+  middleware/
+    authMiddleware.js        Verifica JWT e popula req.user
+    errorMiddleware.js       Handler global de erros (4 parâmetros)
+    notFoundMiddleware.js    Responde 404 para rotas inexistentes
+scripts/
+  resetDev.js          Derruba as coleções (só fora de produção)
+  seedDemo.js          Popula a base de demonstração
+```
+
+Fluxo: `routes → controllers → services → models`
+
+---
+
+## Convenções de nomenclatura
+
+- Arquivos, pastas e funções: **inglês**
+- Campos do banco de dados: **português**
+  — `usuarioId`, `clienteId`, `processoId`, `valorPago`, `dataVencimento`
+- Rotas: **inglês** (`/api/documents`), com exceção dos sub-recursos que
+  nomeiam conceito do domínio já em português (`/secoes`, `/clientes`,
+  `/visibilidade-portal`, `/reordenar`, `/texto`, `/gerar`, `/variaveis`)
+- **`PATCH` é o verbo de update.** `PUT` existe só como alias depreciado em
+  `/clients`, `/processes` e `/documents`, por compatibilidade. Recurso novo
+  não ganha alias.
+- Validação **escrita à mão**, no padrão de `clientValidation.js`.
+  **Sem zod, joi ou yup** — nenhuma dependência de validação.
+- Campo apagado grava **`null`**, nunca `undefined`.
+- **`planoId` ≠ `reparcelamentoId`** (DEC-048): o primeiro é quem me criou, o
+  segundo é quem me cancelou. Uma parcela pode ter os dois, diferentes.
+
+---
+
+## Convenção de fase — o relatório vira arquivo markdown (a partir da F-1b.3.1)
+
+Ao final de **toda fase**, além de exibir o relatório no terminal, o relatório
+**inteiro** é gravado em:
+
+```
+lexa_31maio/relatorios/AAAA-MM-DD-<fase>.md
+```
+
+Na F-1b.3.1: `lexa_31maio/relatorios/2026-08-20-F-1b.3.1.md`.
+
+**Onde, e por quê.** `lexa_31maio/` é a pasta que **contém** os dois repos e
+**não é repositório de nenhum deles**. O relatório fica **fora do controle de
+versão**: não entra em commit por acidente, não polui histórico, não aparece em
+`git status`. **Não se grava dentro do repo do backend nem do frontend.**
+
+Regras do arquivo:
+
+- É o relatório **completo**, com as **saídas reais coladas** — o mesmo
+  conteúdo que iria para o terminal, **não um resumo dele**. Se algo foi
+  truncado na exibição, o arquivo traz a versão inteira.
+- Markdown de verdade: títulos por parte, tabelas onde há tabela, blocos de
+  código para saídas de comando. **Vai ser lido fora do terminal, por outra
+  pessoa.**
+- Cabeçalho de identificação: nome da fase, data, **commits de merge dos dois
+  repos**, contagem final das suítes, e uma linha de **veredito** — "concluída
+  e mergeada" / "parcial, não mergeada" / "parada no portão X".
+- **A regra de segredos vale igual aqui**: nenhum segredo no relatório, nem
+  mascarado — prova por **definido/comprimento/comparação booleana**. Arquivo
+  em disco é justamente onde essa disciplina costuma relaxar.
+- No terminal, ao terminar, basta uma confirmação curta com **o caminho do
+  arquivo gerado**.
+
+A pasta é externa aos repos, mas **a regra é de processo** e por isso fica
+registrada nos **dois** CLAUDE.md: ela precisa sobreviver a troca de sessão.
+
+
+---
+
+## Regras centrais de negócio
+
+1. **Isolamento por usuário:** toda entidade tem `usuarioId`. Toda busca,
+   listagem, atualização e exclusão inclui `{ usuarioId }` no filtro. Nunca
+   omitir.
+2. **Soft delete universal:** exclusão define `ativo: false`. Toda leitura
+   filtra `ativo: true`. Toda coleção tem `usuarioId` e `ativo`.
+3. **Ao criar recurso filho**, o service verifica que o pai existe e pertence
+   ao mesmo `usuarioId`.
+4. **Paginação obrigatória** em todo `GET /`: `?page=1&limit=20`, resposta
+   `{ data, total, page, limit, totalPages }`. Limite máximo 100.
+5. **Padrão de erros:** services lançam
+   `const err = new Error(msg); err.statusCode = 4xx; throw err`.
+   O `errorHandler` responde `{ message, errors? }`. Controllers **nunca**
+   respondem erro direto — sempre `return next(error)`.
+6. **Update por `save()`, não `findOneAndUpdate()`.** `findOneAndUpdate` não
+   dispara `pre("validate")`, e regra que só vale na criação não é regra.
+
+### Hierarquia de dados
+
+```
+User
+ ├─ Client
+ ├─ Process ──── ProcessoCliente ──── Client      (N:N, com papel)
+ │   ├─ Fee ──── Installment ──── Payment
+ │   └─ Document
+ ├─ Secao
+ ├─ Document ─── DocumentoSecao ──── Secao        (N:N, com ordem)
+ └─ Event  ····· Process                          (vínculo OPCIONAL — F-3)
+```
+
+`Process.clientePrincipalId` é **campo derivado** de `ProcessoCliente`. A
+junção é a fonte da verdade; se divergirem, a junção está certa.
+
+`Event.processoId` é **opcional** (a linha pontilhada): evento solto existe, e é
+o caso comum de uma reunião de captação. É o primeiro pai opcional da árvore de
+ativação — ver a DEC-053 estendida, mais abaixo.
+
+---
+
+## Módulos e models reais
+
+| Módulo           | Rotas | Controller | Service | Model(s)                        | Validation |
+|------------------|-------|------------|---------|---------------------------------|------------|
+| Auth             | ✅    | ✅         | ✅      | `User`                          | ✅         |
+| Clients          | ✅    | ✅         | ✅      | `Client`                        | ✅         |
+| Processes        | ✅    | ✅         | ✅      | `Process`, `ProcessoCliente`    | ✅         |
+| Seções           | ✅    | ✅         | ✅      | `Secao`                         | ✅         |
+| Documents        | ✅    | ✅         | ✅×4    | `Document`, `DocumentoSecao`    | ✅         |
+| Fees             | ✅    | ✅         | ✅      | `Fee`                           | ✅         |
+| Installments     | ✅    | ✅         | ✅      | `Installment`                   | ✅         |
+| Payments         | ✅    | ✅         | ✅      | `Payment`                       | ✅         |
+| Dashboard        | ✅    | ✅         | ✅      | — (agrega)                      | —          |
+| Financeiro       | ✅    | (dashboard)| ✅×2    | — (agrega)                      | —          |
+| **Portal** (3.1) | ✅    | ✅×2       | ✅×4    | `ConfirmacaoVisualizacao`       | ✅         |
+| **Agenda** (F-3) | ✅    | ✅×2       | ✅×3    | `Event`                         | ✅         |
+
+**12 módulos, 13 models** (`shared/enderecoSchema.js` é sub-schema, não model).
+
+A **Agenda** (F-3) é o primeiro módulo com **dois controllers e três services**
+para uma entidade só, e a divisão é a DEC-055 na estrutura de pastas:
+`eventService` GRAVA o evento, `calendarService` LÊ as duas naturezas juntas e
+não escreve nada, `timelineService` apresenta o histórico que a DEC-054 já
+guarda. Um service só teria a escrita da entidade e a leitura da derivada no
+mesmo arquivo — que é onde alguém acabaria gravando a segunda.
+
+O módulo **Financeiro** ganhou service próprio na Fase 4.1
+(`financeiroService.js`, a ficha do processo, ao lado do resumo que vive em
+`dashboardService.js`), e o de **Payments** ganhou o recibo
+(`receiptService.js`). Nenhum model novo: os dois só leem.
+
+O portal tem **quatro** services, pela mesma razão que o de documentos:
+
+| Service                     | Responsabilidade                                  |
+|-----------------------------|---------------------------------------------------|
+| `portalAuthService.js`      | login, 401 unificado, troca de senha, reemissão    |
+| `portalService.js`          | consulta — lê os models direto, sem os da advogada |
+| `portalProjection.js`       | **allowlist** — monta a resposta campo a campo     |
+| `confirmacaoService.js`     | confirmação de visualização, os dois lados         |
+
+O módulo de documentos tem **quatro** services, por responsabilidade:
+
+| Service                        | Responsabilidade                                  |
+|--------------------------------|---------------------------------------------------|
+| `documentService.js`           | CRUD e vínculos documento ↔ seção (ordem)         |
+| `documentGenerationService.js` | Modelos, resolução de variáveis, geração, texto    |
+| `documentRenderService.js`     | Timbrado e layout — **fonte da verdade do visual** |
+| `documentDownloadService.js`   | Empacota PDF/DOCX, nome do arquivo, content-type   |
+
+Ao lado deles, dois services de renderização que **não são** do módulo de
+documentos, criados/extraídos na Fase 4.1:
+
+| Service                     | Responsabilidade                                     |
+|-----------------------------|------------------------------------------------------|
+| `letterheadService.js`      | **Timbrado compartilhado** — cabeçalho, rodapé, fontes, medidas, nome de arquivo. Usado pelo documento **e** pelo recibo |
+| `receiptService.js`         | Recibo de pagamento em PDF, sob demanda. **Não** grava `Document` |
+| `financeiroService.js`      | Ficha financeira do processo (consolidação)          |
+
+---
+
+## Endpoints por módulo
+
+Todos sob `/api`, todos autenticados por `authMiddleware`, exceto
+`POST /auth/register` e `POST /auth/login`.
+
+### `/api/auth`
+| Verbo | Caminho          | Nota                                       |
+|-------|------------------|--------------------------------------------|
+| POST  | `/register`      | rate limit próprio; emite o cookie         |
+| POST  | `/login`         | rate limit próprio                         |
+| POST  | `/logout`        |                                            |
+| GET   | `/me`            | responde `{ usuario }`                     |
+| PATCH | `/me`            | perfil, endereço, OAB, advocacia, logo     |
+| GET   | `/me/timbrado-exemplo` | **3.6 (DEC-126)** — PDF de uma página com o timbrado salvo; nenhum parâmetro |
+| POST  | `/alterar-senha` | rate limit próprio                         |
+| POST  | `/confirm-email` | **A-2** — público; consome o link; não abre sessão |
+| POST  | `/resend-confirmation` | **A-2** — exige sessão; 429 `aguarde` em 1 min |
+| POST  | `/forgot-password` | **A-2** — público; **200 idêntico** para tudo |
+| POST  | `/reset-password` | **A-2** — público; troca a senha e derruba as sessões |
+
+### `/api/clients`
+`POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `PUT /:id` (alias) · `DELETE /:id`
+
+Recusa excluir cliente que participa de processo ativo (409, diz quantos).
+
+### `/api/processes`
+| Verbo  | Caminho                                    |
+|--------|--------------------------------------------|
+| GET    | `/:id/clientes`                            |
+| POST   | `/:id/clientes`                            |
+| GET    | `/:id/clientes/:clienteId/codigo-acesso`   |
+| PATCH  | `/:id/clientes/:clienteId/principal`       |
+| PATCH  | `/:id/clientes/:clienteId`                 |
+| DELETE | `/:id/clientes/:clienteId`                 |
+| POST   | `/` · `GET /` · `GET /:id` · `PATCH /:id` · `PUT /:id` · `DELETE /:id` |
+
+Criação com array `clientes: [{ clienteId, papel, principal }]` **em
+transação**. Papéis: `autor`, `reu`, `terceiro_interessado`, `litisconsorte`.
+Código de acesso é buscado **sob demanda** — nunca vem na listagem.
+
+### `/api/secoes`
+`POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
+
+`GET /` aceita `?tipo=` e `?busca=`. A busca é **insensível a acento e a
+caixa** — resolvido no regex, na Fase 2D.1. `Secao.variaveis` é **derivado**
+por hook `pre("validate")` a partir do texto; nunca entrada do usuário.
+`DELETE` recusa com 409 e **nomeia os documentos** que usam a seção.
+
+### `/api/documents`
+
+> **Ordem das rotas importa.** `/variaveis`, `/modelos` e os sub-recursos de
+> `/:id` são declarados **antes** das rotas genéricas de `/:id` — na ordem
+> inversa, "modelos" seria capturado como id.
+
+| Verbo  | Caminho                          | Corpo / query                                     | Resposta                                              |
+|--------|----------------------------------|---------------------------------------------------|-------------------------------------------------------|
+| GET    | `/variaveis`                     | —                                                 | `{ total: 48, grupos: [{ origem, rotulo, descricao, total, variaveis: [{ chave, rotulo, descricao }] }] }` |
+| POST   | `/modelos`                       | `{ nome, tipo, descricao? }`                      | `201` Document (`ehModelo: true`)                     |
+| GET    | `/modelos`                       | `?page&limit&tipo`                                | página de modelos                                     |
+| POST   | `/modelos/:id/gerar`             | `{ processoId*, clienteId?, honorarioId?, confirmarSobrescrita? }` | `201` Document gerado                |
+| POST   | `/`                              | Document                                          | `201`                                                 |
+| GET    | `/`                              | `?page&limit&processoId&busca&de&ate&ehModelo&geradoDeModeloId&clienteId&visivelPortal` (DEC-138/144) | página de documentos                                  |
+| GET    | `/:id/preview`                   | `?processoId&clienteId&honorarioId`               | `{ textoResolvido, pendencias, lacunas, … }`          |
+| GET    | `/:id/download`                  | `?formato=pdf\|docx`                              | binário + `Content-Disposition`                       |
+| PATCH  | `/:id/texto`                     | `{ textoResolvido }`                              | `{ documentoId, editadoManualmente, textoResolvido, lacunas }` |
+| GET    | `/:id/secoes`                    | —                                                 | vínculos ordenados, com `secaoId` populado            |
+| POST   | `/:id/secoes`                    | `{ secaoId, ordem? }`                             | `201` vínculo (ordem omitida ⇒ anexa ao fim)          |
+| PATCH  | `/:id/secoes/reordenar`          | `{ secoes: [secaoId, …] }`                        | vínculos reordenados                                  |
+| DELETE | `/:id/secoes/:secaoId`           | —                                                 | `{ message, secoesRestantes }`                        |
+| PATCH  | `/:id/visibilidade-portal`       | `{ visivelPortal? }`                              | Document (omitido ⇒ alterna)                          |
+| GET    | `/:id` · PATCH `/:id` · PUT `/:id` (alias) · DELETE `/:id` | | |
+
+**Códigos de erro que a interface precisa tratar:**
+
+| Código | Quando                                                                 |
+|--------|------------------------------------------------------------------------|
+| `422`  | Pendência de cadastro. `errors.pendencias[]` com `{ variavel, rotulo, origem, orientacao, opcoes? }` |
+| `409`  | Regeração sobre documento **editado à mão**. Reenviar com `confirmarSobrescrita: true` |
+| `409`  | Seção já vinculada ao documento (índice único)                          |
+| `400`  | Cliente sem vínculo ativo com o processo; honorário de outro processo   |
+
+`DELETE /api/documents/:id` **cascateia** soft delete nos vínculos de seção —
+sem isso a seção ficava "em uso" por um documento inexistente, e a exclusão
+dela era recusada para sempre.
+
+### `/api/fees`, `/api/installments`, `/api/payments`
+`POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `PUT /:id` (alias) · `DELETE /:id`
+
+`PATCH` entrou na Fase 4.1 como verbo principal das três; `PUT` fica como alias
+depreciado, no padrão de `/clients`, `/processes` e `/documents`. Os dois
+apontam para o mesmo handler e passam pelo mesmo `save()`, e portanto pelo mesmo
+hook condicional do `Fee`.
+
+| Verbo | Caminho | Nota |
+|-------|---------|------|
+| GET | `/api/payments/:id/recibo` | recibo em PDF; só pagamento **ativo**, desativado ⇒ 404 |
+
+**Campos do `Fee` (Fase 4.1):** `percentual` e `valorBase`, os dois `null` fora
+do tipo percentual. `valor` é derivado no tipo percentual — ver DEC-027.
+**Campo do `Installment` (Fase 4.1):** `valorPago`, nunca escrito por rota.
+
+**Códigos de erro do módulo financeiro**, que a tela da Fase 4.2 precisa tratar:
+
+| Código | Chaves | Quando |
+|--------|--------|--------|
+| `400` | `campo` + `errors.<caminho>` | hook condicional do `Fee` reprovou um campo (só quando UM campo é responsável) |
+| `400` | `campo: "valorPago"` | `valorPago` enviado no corpo de parcela |
+| `409` | `dependencia`, `quantidade` | honorário com parcelas ativas; parcela com pagamentos ativos |
+| `409` | `regra`, `saldoDisponivel`, `valorParcela`, `campo: "valorPago"` | pagamento excede a parcela |
+| `422` | `errors.pendencias[]` | `{{percentualHonorario}}` num honorário sem percentual |
+
+### `/api/financeiro`
+| Verbo | Caminho | Resposta |
+|-------|---------|----------|
+| GET | `/resumo` | resumo global do escritório — contrato completo abaixo |
+| GET | `/processos/:processoId` | **ficha financeira do processo** (Fase 4.1) |
+
+#### Contrato de `GET /financeiro/resumo` — fechado na Fase 4.3 (DEC-028d)
+
+Nove chaves de primeiro nível. As quatro primeiras existiam desde a Fase 1; as
+cinco últimas cumprem a promessa da DEC-028(d), que a Fase 4.2 registrou como
+não cumprida e exibiu com rótulos honestos.
+
+| Campo | Tipo | Semântica |
+|---|---|---|
+| `valorContratado` | number | Σ `Fee.valor` dos honorários **vigentes** |
+| `recebido` | number | Σ `Installment.valorPago` das parcelas desses honorários |
+| `pendente` | number | `valorContratado − recebido` |
+| `vencidas` | number | **contagem** de parcelas com status `vencido` |
+| `mesReferencia` | string | `"2026-08"` — mês do **servidor**, em UTC |
+| `aReceberNoMes` | number | Σ `emAberto` das parcelas **não canceladas** que vencem no mês corrente (DEC-068) |
+| `recebidoNoMes` | number | Σ `Payment.valorPago` com `dataPagamento` no mês |
+| `valorVencido` | number | Σ `emAberto` das parcelas com status `vencido` |
+| `proximosVencimentos` | array | ≤ 5 parcelas não quitadas e **não canceladas**, `dataVencimento` ≥ hoje (DEC-068) |
+
+Cada item de `proximosVencimentos`: `{ _id, descricaoHonorario, numeroParcela,
+valor, valorPago, emAberto, dataVencimento, status, processoId,
+numeroProcesso }`.
+
+**A cadeia é filtrada como a da ficha, e esse é o ponto:**
+
+```
+Process  ativo: true
+  └ Fee  ativo: true  E  status ≠ cancelado
+     └ Installment  ativo: true
+        └ Payment   ativo: true
+```
+
+**Antes da 4.3 os dois números não fechavam.** Medido contra o seed: o resumo
+dizia `valorContratado: 72000` e `recebido: 26600`, enquanto a soma das dez
+fichas dava `71200` e `25800`. A diferença eram os R$ 800 do honorário
+**cancelado** — que a ficha exclui desde a 4.1 — mais a parcela dele, quitada.
+A advogada podia abrir as dez fichas, somar na calculadora e não chegar ao
+número do painel. **Quem se ajustou foi o resumo: a ficha é o contrato
+publicado e não muda.** `tests/financial/resumo.test.js` trava a igualdade
+somando as fichas de verdade, processo a processo.
+
+**`pendente` é `contratado − recebido`, e não a soma dos saldos das parcelas.**
+A ficha calcula o em aberto de cada honorário como `fee.valor − pago`. A
+diferença aparece no honorário ainda não parcelado por inteiro: 3.000
+contratados com uma parcela de 1.000 emitida têm 3.000 em aberto na ficha e
+teriam 1.000 pela outra fórmula. Duas fórmulas para a mesma pergunta divergem.
+
+**`recebidoNoMes` sai de `Payment`, nunca de `Installment`.**
+`Installment.dataPagamento` é a data em que a parcela FECHOU. Um pagamento de
+julho numa parcela vencida em maio precisa contar em **julho**, que é quando o
+dinheiro entrou — é essa a pergunta que o cartão do mês responde.
+
+**As fronteiras do mês são em UTC.** `dataVencimento` e `dataPagamento` são
+datas sem hora: chegam como `"2026-08-31"` e são gravadas em meia-noite UTC, e
+o frontend as renderiza com `timeZone: "UTC"`. Recortar o mês no fuso local do
+servidor jogaria a parcela de 01/09 para dentro de agosto num servidor a oeste
+de Greenwich — e o cartão "A receber em agosto" listaria uma linha datada de
+setembro.
+
+**`getSummary` (`GET /dashboard`) NÃO foi tocado** e continua recortando o mês
+em fuso local em `pagamentosRecebidosMes`. É divergência conhecida e inócua: a
+Fase 4.3 tirou aquele cartão da tela, e o campo ficou sem consumidor. Removê-lo
+é mudança de contrato de outra rota, para outra fase.
+
+### `/api/portal` (Fase 3.1)
+
+Superfície **separada**: middleware próprio (`portalAuthMiddleware`), segredo
+próprio (`JWT_PORTAL_SECRET`), cookie próprio (`lex-portal-token`). Nenhuma
+rota daqui usa `authMiddleware`, e nenhuma de lá usa o do portal.
+
+| Verbo | Caminho | Nota |
+|-------|---------|------|
+| POST  | `/login` | público; balde de rate limit próprio; **401 unificado** |
+| POST  | `/logout` | público (limpa o cookie) |
+| GET   | `/sessao` | responde com senha provisória — é quem precisa saber |
+| PATCH | `/senha` | troca obrigatória; **reemite a sessão** |
+| GET   | `/confirmacoes/texto` | o texto que será gravado, para a tela exibir |
+| POST  | `/confirmacoes` | 403 `confirmacaoExigeSenhaPropria` com senha provisória |
+| GET   | `/processo` | ⬇ daqui para baixo, 403 com senha provisória |
+| GET   | `/documentos` | só `visivelPortal && ativo && origem: "gerado"` |
+| GET   | `/documentos/:id/download` | `?formato=pdf\|docx`; fora do escopo ⇒ **404** |
+| GET   | `/confirmacoes` | histórico do próprio cliente |
+
+**Códigos de erro estáveis** (`src/config/portalErrors.js`), que o frontend usa
+para rotear:
+
+| Código | Status | Quando |
+|--------|--------|--------|
+| `credenciaisInvalidas` | 401 | login — **os seis casos**, corpo idêntico |
+| `sessaoPortalInvalida` | 401 | cookie ausente, expirado, assinatura errada, vínculo/cliente/processo desativado, senha trocada depois da emissão |
+| `senhaPortalProvisoria` | 403 | rota de dado com senha provisória |
+| `confirmacaoExigeSenhaPropria` | 403 | confirmação com senha provisória |
+
+### Rotas da advogada acrescentadas na Fase 3.1
+
+| Verbo | Caminho | Nota |
+|-------|---------|------|
+| DELETE | `/api/clients/:id/senha-portal` | revoga o acesso ao portal |
+| GET | `/api/processes/:id/confirmacoes` | confirmações do processo |
+| PATCH | `/api/processes/:id/confirmacoes/vistas` | marca todas as não vistas |
+
+`GET /api/processes/:id/clientes` passa a devolver **`estadoPortal`**
+(`nunca_acessou` / `acessou_sem_confirmar` / `confirmou`), de
+`src/config/portalEstados.js`. **`codigoAcesso` continua fora** — só sai na rota
+dedicada.
+
+`GET /api/dashboard` ganha **`confirmacoesNaoVistas`**.
+
+### `/api/dashboard`
+`GET /` · `GET /status` · `GET /honorarios-por-mes`
+
+**`GET /honorarios-por-mes` soma `Fee.valor` agrupando por `createdAt`** — é o
+valor **contratado**, pelo mês em que a cobrança foi cadastrada, e não
+recebimento. Quem responde recebimento é `recebidoNoMes`, no resumo financeiro.
+
+**Honorário `cancelado` fica de fora desde a Fase 4.4.** Era achado reportado e
+não corrigido na 4.3: o gráfico somava o cancelado enquanto o `valorContratado`
+do resumo passou a excluí-lo na mesma fase. Os dois números aparecem na **mesma
+tela**, e a advogada podia ler no cartão um contratado menor do que a soma das
+barras logo abaixo. Mesma regra da DEC-028 e da ficha da 4.1 — a cobrança foi
+desfeita. `tests/financial/graficoMensal.test.js` trava as duas pontas,
+inclusive a igualdade entre a soma das barras e o `valorContratado`.
+
+
+---
+
+## Módulo de documentos — decisões fechadas
+
+Não reabrir sem motivo novo e escrito.
+
+1. **Uma única classe de variável.** O catálogo é o mecanismo de
+   autopreenchimento. O que não vem de cadastro, a advogada escreve no editor
+   de texto final. **Não existe** sintaxe de variável de preenchimento nem
+   formulário na geração.
+2. **O catálogo é FECHADO, em 48 chaves** — `cliente` 20, `usuario` 10,
+   `processo` 9, `honorario` **7**, `sistema` 2. Eram 47 até a Fase 3.2; a
+   Fase 4.1 acrescentou `percentualHonorario`, e só ela. A validação acontece no
+   **cadastro da seção**, não na geração: é no cadastro que a advogada ainda
+   tem contexto para corrigir um `{{nomeDoCliente}}` que ela quis escrever
+   como `{{nomeCliente}}`.
+3. **Toda chave precisa de rótulo e descrição escritos à mão** em
+   `variableLabels.js`. `assertCatalogoRotulado()` roda na **carga do
+   módulo** e derruba o processo se faltar alguma. **É intencional — não
+   desativar.** Sem ela, a chave nova apareceria no seletor sem nome nenhum.
+4. **Chaves da origem `usuario` no feminino** (`nomeAdvogada`, `cpfAdvogada`).
+   A chave aparece na tela. Renomeado na Fase 2D.2, **sem alias de
+   compatibilidade** — não há dado de produção, a única base é a do seed.
+5. **Poder moderador:** ela edita o texto final sem precisar corrigir a seção
+   de origem. Depois de gerado, **`textoResolvido` é a única fonte da
+   verdade**. Os vínculos de seção permanecem como *rastreabilidade de
+   origem* e **nunca** são recompostos — se fossem, a edição dela sumiria no
+   próximo download, em silêncio.
+6. **Timbrado é camada de renderização, não Seção.** Configurado uma vez no
+   Perfil, aplicado a todo documento. Sem logo, o cabeçalho usa só texto e
+   continua bem diagramado — sem buraco no layout.
+7. **Mesma seção não repete** no mesmo documento, e duas seções não ocupam a
+   mesma posição. Dois índices únicos parciais em `documento_secao`
+   (`{documentoId, ordem}` e `{documentoId, secaoId}`, ambos com
+   `partialFilterExpression: { ativo: true }`). O frontend **antecipa** a
+   restrição; o banco é quem a garante.
+8. **Reordenação em duas fases.** O índice único é verificado a cada
+   operação, não ao fim do lote: reatribuir 1..N direto colide no meio do
+   caminho. Fase 1 desloca tudo para um intervalo negativo temporário, fase 2
+   grava as ordens definitivas — uma `bulkWrite` ordenada. A leitura
+   **autocorrige** ordens < 1, caso o processo caia entre as duas fases.
+9. **Empurrão de posição:** `POST /:id/secoes` com `ordem` insere na posição e
+   empurra as seguintes. Ordem omitida anexa ao fim. Fora do intervalo,
+   encaixa na borda mais próxima. **A regra é do backend — não reimplementar
+   no frontend.**
+10. **Escolha do honorário:** informado ⇒ valida que é do processo; omitido +
+    1 ativo ⇒ usa esse; omitido + N ativos ⇒ **422 pedindo escolha**, com
+    `opcoes[]`; omitido + 0 ativos ⇒ 422 de cadastro. **Nunca adivinhar** —
+    nem "o mais recente", nem "o de maior valor". Só cobra a escolha se o
+    texto realmente usa variável de honorário.
+11. **Documento gerado é congelado.** `textoResolvido` e
+    `variaveisResolvidas` ficam gravados e não acompanham alteração posterior
+    no cadastro. `PATCH /:id` não os aceita.
+12. **Regeração de documento editado à mão exige `confirmarSobrescrita`**
+    (409 sem ele). Confirmada, o anterior sai por soft delete e recebe
+    `substituidoPorId` apontando para o novo — a cadeia continua navegável e o
+    texto revisado, recuperável.
+13. **"O mesmo documento" é modelo + processo + cliente.** Regerar para outro
+    cliente do mesmo processo é documento **novo**, não sobrescrita —
+    litisconsórcio gera uma procuração por participante.
+14. **Documento gerado registra `clienteId` e `honorarioId`** — de qual
+    participante saiu a peça e de qual cobrança saíram os valores. Sem isso,
+    duas procurações do mesmo modelo e processo ficam indistinguíveis na
+    listagem.
+15. **Lacuna é aviso, nunca impedimento.** `[...]` no texto (ou três ou mais
+    sublinhados) vira `lacunas[]` na resposta. O download continua liberado.
+    Pendência de cadastro, ao contrário, **bloqueia** com 422.
+16. **Upload não aparece na interface.** Só documentos gerados. O campo
+    `origem` (`upload` | `gerado`) e o caminho de upload ficam **dormentes**
+    na API. O anteprojeto assinado exclui upload do escopo.
+17. **`ehModelo` é imutável** depois da criação. Virar modelo descartaria o
+    processo e deixaria um arquivo órfão. Modelo se cria por
+    `POST /documents/modelos`.
+18. **Modelo nunca vai ao portal** e não tem texto final editável.
+
+### Enums do domínio
+
+```
+TIPOS_DOCUMENTO   procuracao, contrato_prestacao_servicos, declaracao_isencao_ir,
+                  declaracao_autonomo, declaracao_hipossuficiencia,
+                  declaracao_renuncia, peticao, sentenca, comprovante, outro
+ORIGENS_DOCUMENTO upload, gerado
+TIPOS_SECAO       qualificacao, objeto, clausula, fundamentacao, pedido,
+                  encerramento, assinatura, outro
+PAPEIS            autor, reu, terceiro_interessado, litisconsorte
+STATUS_PROCESSO   ativo, encerrado, suspenso
+ORIGENS_VARIAVEL  usuario, cliente, processo, sistema, honorario
+```
+
+---
+
+## Contrato do 409 — chaves estruturadas
+
+Fixado na Fase 2E.1. O `errorHandler` só repassa ao cliente as chaves de uma
+**allowlist** (`CHAVES_ESTRUTURADAS`, em `middleware/errorMiddleware.js`);
+qualquer outra propriedade pendurada no `Error` fica fora da resposta.
+
+Existem **dois** tipos de 409, com chaves diferentes, e a diferença é
+deliberada.
+
+### 1. Conflito de campo de formulário → `campo`
+
+Algum input que ela acabou de preencher colide com um registro existente. A
+tela destaca aquele input. Valor de `campo` é o **nome do campo no payload**.
+
+| Origem                                    | `campo`          |
+|-------------------------------------------|------------------|
+| `processService` — número duplicado        | `numeroProcesso` |
+| `installmentService` — nº de parcela no mesmo honorário | `numeroParcela` |
+| `secaoService` — título de seção duplicado | `titulo`         |
+| `documentService` — seção já vinculada     | `secaoId`        |
+| `clientService` — CPF/CNPJ/e-mail          | `cpf` / `cnpj` / `email` |
+| `paymentService` — valor excede a parcela  | `valorPago`      |
+
+### 2. Integridade referencial → `dependencia` + `quantidade`
+
+A exclusão é recusada porque **outros registros ativos dependem** do que se
+quer apagar. **`campo` não se usa aqui**: `campo` existe para destacar um
+input, e neste 409 não há input em conflito — o conflito é entre registros já
+gravados. Devolver `campo` mandaria a tela destacar um campo que não tem nada
+de errado.
+
+- `dependencia` — string do **vocabulário fechado** abaixo.
+- `quantidade` — number, dependentes **ativos** encontrados. Vem da consulta
+  que o service já faz para detectar o bloqueio; nunca de consulta extra.
+
+**Vocabulário fechado de `dependencia`** — definido em
+`src/config/integrityConflicts.js`, exportado como `DEPENDENCIA` (mapa) e
+`DEPENDENCIAS` (array derivado do mapa, para os dois não divergirem). Os
+valores são **nome da coleção dependente, em português, no plural**, seguindo
+a convenção do projeto.
+
+| Valor        | Quando                                     | Service              |
+|--------------|--------------------------------------------|----------------------|
+| `processos`  | cliente participa de processos ativos      | `clientService`      |
+| `parcelas`   | honorário tem parcelas ativas              | `feeService`         |
+| `pagamentos` | parcela tem pagamentos ativos              | `installmentService` |
+| `documentos` | seção está vinculada a documentos ativos   | `secaoService`       |
+
+**Não inventar valor novo fora dessa lista.** Ela existe porque, sem ela, em
+três fases existiriam `parcelas`, `parcela` e `installments` como valores
+possíveis, e o frontend voltaria a chutar.
+
+### 3. Outra regra de negócio → `regra` + chaves próprias
+
+Nem todo 409 é contagem de dependente. Quando não for,
+`dependencia`/`quantidade` não descrevem nada e **não se força o formato**: a
+regra declara as chaves que a descrevem, listadas em `REGRA_CONFLITO` no
+mesmo arquivo.
+
+| `regra`                    | Chaves que acompanham            | Quando                          |
+|----------------------------|----------------------------------|---------------------------------|
+| `pagamentoExcedeParcela`   | `saldoDisponivel`, `valorParcela` (numbers), e `campo: "valorPago"` | soma dos pagamentos passaria o valor da parcela |
+
+### Regra que vale para os três
+
+**A mensagem em prosa continua existindo e cita a quantidade e o tipo** — é o
+que a advogada lê. As chaves estruturadas são para o frontend decidir o que
+oferecer. Sem elas, a tela que quiser um botão "ver as 3 parcelas" extrai o
+número por regex de dentro da string, que foi exatamente como a Fase 1.3
+quebrou, quando o roteamento de etapa do cadastro dependia de `/mail/i` bater
+na mensagem.
+
+**O frontend ainda não consome `dependencia`/`quantidade`.** A tela que vai
+usar é a ficha financeira da Fase 4. O contrato existe e está acima.
+
+---
+
+## Dívidas conhecidas e aceitas
+
+- **`src/utils/texto.js` duplica `semAcento`**, que agora vive em
+  `letterheadService.js` (era em `documentRenderService.js`). Registrado na
+  Fase 2D.1 e **não unificado na 4.1**: a fase autorizou mexer no renderizador
+  **apenas** para extrair o timbrado, e unificar `semAcento` não é isso. O que
+  a 4.1 fez foi parar de duplicar a regra de NOME DE ARQUIVO — o recibo usa a
+  mesma `nomeArquivoSeguro` do download de documento.
+- `valorParcela` fica `undefined` quando as parcelas são desiguais. É
+  honesto: dividir o total pelo número produziria um valor que não
+  corresponde a nenhuma cobrança real.
+- ~~Não há `CLAUDE.md` no repositório do frontend.~~ **Existe desde a Fase
+  4.2** (`lex-frontend/CLAUDE.md`, 791 linhas), e cobre as decisões de
+  interface. Esta linha ficou desatualizada por quatro fases e foi corrigida
+  na F-0. O contrato da API continua morando **aqui**; lá está o que é decisão
+  de tela.
+
+### Índices não consultados — MANTIDOS de propósito (eram três, restam dois)
+
+Registrado na Fase 2E.1. Nenhuma consulta atual os usa. **Não remover**: o
+custo no volume de hoje é desprezível, e tirar agora para readicionar em duas
+fases é churn.
+
+| Índice                          | Quem vai consultar                                    |
+|---------------------------------|-------------------------------------------------------|
+| `documents.substituidoPorId_1`  | a cadeia de substituição, quando existir reativação de documento |
+| ~~`documents.honorarioId_1`~~   | **CONSULTADO desde a Fase 4.1** — ver abaixo          |
+| `processes.clientePrincipalId_1`| leitura por cliente principal                         |
+
+**`documents.honorarioId_1` saiu da lista.** A ficha financeira do processo
+(Fase 4.1) o consulta: cada honorário traz os documentos que saíram dele —
+`Document.find({ honorarioId: { $in: feeIds }, … })` em
+`services/financeiroService.js`. Era exatamente a pergunta pela qual o índice
+foi criado. **Restam dois** índices não consultados.
+
+### Resíduo removível — `res.data.data ?? res.data`
+
+Depois que a Fase 2E.1 padronizou `GET /processes/:id/clientes` e
+`GET /documents/:id/secoes` no envelope, **todas** as listagens da API
+devolvem `{ data, total, page, limit, totalPages }`. Os ~20 sítios do
+frontend que escrevem `res.data.data ?? res.data` continuam **corretos**, mas
+o fallback nunca mais dispara. Removível quando houver fase que já mexa
+nesses arquivos; alterar 20 sítios só para isso é risco sem retorno.
+
+### Decisão mantida — envelope de `/auth`
+
+`GET /auth/me` e `POST /auth/login` devolvem `{ usuario }`. Todo outro
+`GET /:id` devolve o objeto cru. É diferença **entre** módulos, consistente
+**dentro** de cada um, e o `AuthContext` do frontend depende dela. **Não se
+mexe** por ganho cosmético.
+
+### Suspeita diferida — índice composto `{ usuarioId: 1, ativo: 1 }`
+
+Toda leitura filtra por `usuarioId` **e** `ativo`, e não há índice composto
+para esse par. Hoje o ganho seria imperceptível. **A confirmar com
+`.explain("executionStats")` sob alguns milhares de documentos** antes de
+criar qualquer índice — número, não intuição.
+
+### DEC-029 — portal do cliente. FECHADA e implementada na Fase 3.1
+
+Os 12 pontos ratificados, agora todos com código e teste. **Não reabrir.**
+
+1. **Login = código de acesso + senha.** O `codigoAcesso` já existe por vínculo
+   `ProcessoCliente` desde a Fase 2B, formato `LEX-XXXX-XXXX`.
+2. **A senha é do CLIENTE, não do vínculo.** Campo no `Client`. Quem tem três
+   processos tem três códigos e uma senha só: o código diz qual processo a
+   sessão enxerga, a senha diz quem é a pessoa.
+3. **Senha inicial definida pela advogada**, no fluxo de cadastro do cliente
+   que já existe, e entregue junto com o código.
+4. **Troca obrigatória no primeiro acesso.** Enquanto `senhaPortalProvisoria`
+   for `true`, toda rota do portal responde **403** com código
+   `senhaPortalProvisoria` — exceto `/sessao`, `/senha`, `/logout` e
+   `/confirmacoes/texto`. Ver o bloco próprio abaixo: **este ponto não é
+   conveniência.**
+5. **CPF nunca é senha**, nem definitiva nem provisória. A checagem roda ANTES
+   das regras de força — CPF é só dígito e reprovaria por "falta uma letra",
+   dando dica de formatação em vez do motivo real.
+6. **Sessão escopada ao VÍNCULO**, não ao cliente. Uma sessão enxerga um
+   processo.
+7. **Segredo próprio**: `JWT_PORTAL_SECRET`, cookie `lex-portal-token`. Ver o
+   bloco próprio abaixo.
+8. **Escopo do portal:** o processo do vínculo e os documentos com
+   `visivelPortal: true`. **Sem honorário, sem financeiro, sem parcela, sem
+   pagamento.**
+9. **`observacoes` de cliente e de processo NUNCA vão ao portal.** São anotação
+   interna da advogada sobre a parte, não informação para a parte. É o campo
+   mais perigoso do schema.
+10. **Outros participantes não são expostos.** O cliente vê o próprio papel,
+    não a lista de litisconsortes.
+11. **401 unificado** no login: os seis casos (código inexistente, vínculo
+    inativo, cliente sem senha, senha errada, cliente inativo, processo
+    inativo) devolvem corpo e status **byte-idênticos**, e a comparação bcrypt
+    roda sempre, inclusive quando o acesso já será negado — sem isso o tempo de
+    resposta reintroduziria pela lateral a distinção que o corpo único apaga.
+12. **Rate limit próprio**, `RATE_LIMIT_PORTAL_LOGIN`, default 5. Balde
+    separado dos três de `authRoutes.js`, com teste provando que estourar um
+    não afeta o outro.
+
+**Projeção allowlist, agora com teste.** `src/services/portalProjection.js`
+monta toda resposta campo a campo, por escrita explícita. Sem spread, sem
+`delete obj.x`, sem `.select("-campo")`.
+
+Allowlist e não blocklist porque blocklist protege o schema de **hoje**: no dia
+em que alguém acrescentar um campo ao `Client`, ele entra na resposta do portal
+sozinho, sem ninguém decidir e sem nenhum teste falhar.
+
+**Nenhuma rota do portal reaproveita `clientService`, `processService` ou
+`documentService`.** Eles devolvem o documento inteiro; "limpar depois"
+reintroduz a blocklist pela porta dos fundos, dentro de um service que ninguém
+suspeita. `portalService.js` lê os models direto e projeta.
+
+### Por que a troca de senha é obrigatória (DEC-029, ponto 4)
+
+**Enquanto a advogada conhecer a senha, a confirmação de leitura é repudiável e
+não serve como prova de que o cliente foi informado.**
+
+Essa é a frase inteira. A senha inicial é definida pela advogada e entregue ao
+cliente; enquanto for essa senha, ela consegue entrar no portal como se fosse
+ele e clicar em "confirmo que li". O cliente poderia dizer, com razão, que não
+foi ele — e o artefato que a Fase 3.1 existe para produzir viraria enfeite.
+
+Consequências no código, todas com teste:
+
+- a confirmação é **recusada** enquanto a senha for provisória, com código
+  próprio (`confirmacaoExigeSenhaPropria`), distinto do 403 genérico;
+- a nova senha **não pode ser igual à provisória** — "trocar" repetindo a que a
+  advogada entregou marcaria a senha como definitiva com ela ainda conhecendo;
+- o **acesso não é registrado** enquanto a senha for provisória: quem entra
+  pode ser a advogada testando a credencial que acabou de criar, e é justamente
+  esse rastro que ela vai olhar antes de afirmar que a pessoa foi informada;
+- a sessão é **reemitida** na troca, e o token anterior morre (ver abaixo).
+
+**Não remover a obrigatoriedade "para simplificar o fluxo".** Está escrito
+também em `portalAuthService.trocarSenha`.
+
+### Segredo separado, e por que o cookie não basta (DEC-029, ponto 7)
+
+**Nome de cookie não é fronteira de segurança.** Quem controla o navegador
+escolhe em qual cookie põe qual string.
+
+Com o mesmo segredo nos dois domínios, um token de portal renomeado para
+`lex-token` passaria na verificação de assinatura do `authMiddleware`, e a
+única coisa entre um cliente e o cadastro inteiro da advogada seria a checagem
+de `tipo` — uma condição de `if`, não criptografia. Com segredos distintos, a
+assinatura não confere: a defesa vira matemática em vez de disciplina.
+
+`assertSegredoDoPortal()` (`src/config/portalSecret.js`) roda na carga de
+`src/app.js` e **derruba o processo** se `JWT_PORTAL_SECRET` faltar ou for
+igual ao `JWT_SECRET`. Mesmo padrão das guardas de banco da 2E.2.
+
+A checagem de `tipo` continua existindo **nos dois middlewares**, como segunda
+tranca, para o dia em que alguém apontar as duas variáveis para o mesmo valor.
+
+**O token carrega o carimbo da senha** (`senhaCarimbo` =
+`senhaPortalDefinidaEm` em ISO). JWT não tem revogação: sem isso, "reemitir a
+sessão" não invalidaria o token anterior, e o token emitido enquanto a advogada
+conhecia a senha continuaria válido pelas 2 horas seguintes — a janela que a
+troca obrigatória fecha ficaria aberta. O middleware já carrega o `Client` para
+checar `senhaPortalProvisoria`, então a comparação não custa consulta nenhuma.
+
+**Sessão de 2 horas**, contra `1d` da advogada. O portal é consulta — entra, lê,
+confirma, sai —, não jornada de trabalho; e o código de acesso circula por
+WhatsApp e por papel, então "aparelho emprestado com sessão viva" é cenário
+realista, não hipótese.
+
+### Confirmação de visualização é IMUTÁVEL e NÃO cascateia
+
+**A cascata de soft delete é o padrão do projeto desde a Fase 2A. Esta é a
+exceção deliberada.** Está escrita no model, para quem vier "corrigir por
+consistência".
+
+Desativar o vínculo, o processo ou o cliente **não** desativa as confirmações.
+Elas são prova de que a informação foi entregue, e **prova que some não serve
+para nada** — o valor de um recibo está em ele sobreviver ao fim da relação que
+o gerou. Encerrar o processo é exatamente quando a advogada mais pode precisar
+mostrar que informou.
+
+- Nenhuma rota **altera** uma confirmação depois de criada, exceto marcar
+  `vistaPelaAdvogada` (por processo, não uma a uma).
+- Nenhuma rota **apaga** confirmação — nem o cliente, nem a advogada.
+- Confirmações repetidas são **permitidas** e todas registradas. Confirmar
+  hoje, a advogada liberar um documento amanhã, e o cliente confirmar de novo
+  são dois fatos distintos, sobre conteúdos distintos. Sobrescrever apagaria a
+  primeira ciência, que é a que talvez importe num prazo.
+
+**Confirmação não é acesso.** `ultimoAcessoPortal` registra que a tela foi
+aberta: é automático, é atividade e não notifica. Confirmação é clique
+deliberado e é o que notifica. "O sistema registrou que a página foi aberta" e
+"a pessoa declarou que leu" são afirmações de força muito diferente.
+
+**Sem IP e sem user-agent.** Minimização de dado pessoal: o carimbo de tempo
+sustenta o recibo, e aqui a advogada é controladora de dado de terceiro.
+
+**O texto vem do backend** (`src/config/textoConfirmacao.js`), nunca do corpo da
+requisição, e é **copiado inteiro** para dentro de cada registro. Se viesse do
+cliente, o recibo afirmaria o que o navegador mandou. E guardar só uma
+referência faria o registro de 2026 mudar de sentido quando alguém reescrevesse
+a constante em 2027.
+
+### Regerar documento visível — os DOIS caminhos, medidos na Fase 3.2
+
+Documento novo nasce com `visivelPortal: false` (decisão de segurança do model)
+e não há rota que leia documento inativo. **O comportamento é mantido de
+propósito:** a alternativa é uma peça nova aparecer para o cliente sem ninguém
+ter liberado.
+
+**A Fase 3.1 registrou que "regerar um documento visível o faz desaparecer do
+portal". Isso vale para UM dos dois caminhos, e a Fase 3.2 mediu os dois contra
+a base do seed.** O soft delete do anterior está sob
+`if (anterior && confirmarSobrescrita === true)`
+(`documentGenerationService.js:483`) — sem confirmação, o anterior **não é
+desativado**.
+
+| Caminho | 409? | O anterior | O novo | O que o cliente vê |
+|---|---|---|---|---|
+| **Editado à mão** + `confirmarSobrescrita` | sim | soft delete, com `substituidoPorId` | invisível | **perde** o documento |
+| **Não editado** | não | **continua ativo e visível** | invisível, ao lado | continua vendo a versão **ANTIGA** |
+
+O segundo caminho é o mais comum, porque a maioria dos documentos não é editada
+à mão — e era o que **não tinha aviso nenhum**, já que o aviso da 3.1 vive
+dentro do 409 e o 409 só dispara para documento editado.
+
+**Consequências, todas no frontend (`GenerationPanel.jsx`):**
+
+- o aviso vale para **toda** regeração de documento com `visivelPortal: true`,
+  antes de executar, nos dois caminhos;
+- **os textos são diferentes**, porque o efeito é diferente. Um texto único
+  dizendo "o documento sai do portal" estaria errado na metade dos casos, e
+  errado na direção pior: a advogada acharia que o cliente ficou sem nada
+  quando ele está lendo a versão velha;
+- no caminho **sem 409**, liberar o documento novo **também tira o anterior do
+  portal** — liberar um sem tirar o outro deixaria duas versões da mesma peça
+  lá, e o cliente sem saber qual vale;
+- o backend **não foi alterado**. O 409 continua carregando `visivelPortal` e
+  `errors.sairaDoPortal`, e o frontend aceita as duas fontes (a chave do 409 e
+  a própria consulta) para o aviso não depender de uma só.
+
+### O portal mora no MESMO app, sob `/portal/*` (Fase 3.2)
+
+Um build, um deploy, um domínio. O PWA existente continua valendo, não há
+segundo CORS para configurar nem segundo pipeline para esquecer.
+
+O que o portal tem de **próprio**, e por quê:
+
+| Peça | Arquivo | Por quê |
+|---|---|---|
+| Instância de HTTP | `api/portalAxios.js` | ver abaixo — é a mais importante |
+| Contexto de sessão | `contexts/PortalAuthContext.jsx` | dois cookies, dois segredos, dois ciclos de vida; o mesmo navegador pode ter as duas sessões |
+| Portão de rota | `components/portal/PortalProtectedRoute.jsx` | sem sessão → `/portal`; senha provisória → `/portal/senha` |
+| Layout | `components/portal/PortalLayout.jsx` | sem Sidebar e sem Header |
+| Folha de estilo | `components/portal/Portal.css` | não importa CSS das telas da advogada |
+
+**Tudo em `lazy()`, com chunk próprio**, no padrão de `DashboardCharts`
+(`DashboardHomePage.jsx:13`). Sem isso o cliente baixaria o bundle das telas da
+advogada — Financeiro, Perfil, montagem de documento, `recharts` — para ver um
+processo e dois PDFs, no celular dele, na rede dele.
+
+**Por que a instância de HTTP é separada.** O interceptor de resposta da
+instância da advogada (`api/axiosConfig.js:14-26`) reage a **qualquer** 401 que
+não seja de `/auth/me`, estando fora de `/login`, com
+`window.location.href = '/login'` e o toast "Sessão expirada". O portal
+responde 401 em dois casos **normais**: `credenciaisInvalidas` (o cliente errou
+a senha) e `sessaoPortalInvalida`. Com instância compartilhada, um cliente que
+errasse a senha seria arremessado para o login da advogada, em navegação de
+página inteira, sem nunca ver a mensagem do próprio portal.
+
+Interceptor no axios é **por instância**: como o portal nunca importa
+`axiosConfig.js`, o de lá não enxerga resposta daqui. A separação não depende
+de nenhum dos dois se comportar bem — depende de serem objetos diferentes. O
+interceptor existente **não foi alterado**, e há teste travando a ausência do
+import cruzado nas duas direções (`tests/portal/isolamento.test.js`).
+
+O interceptor do portal **não mexe em `window.location`**: navegação de página
+inteira recarrega o bundle e joga fora o estado do React. Ele avisa o contexto,
+que navega por `useNavigate` — sempre para `/portal`.
+
+**Sem Sidebar e sem Header** não é economia: aquelas peças são o menu de um
+sistema de gestão, e nenhum daqueles destinos existe para o cliente. Exibir a
+moldura de um sistema que ele não pode operar só sugere que há mais coisa
+atrás.
+
+### A tela nunca é mais rígida que a API
+
+**Regra geral do projeto, nascida do portal.**
+
+O caso que a fixou: o backend aceita o código de acesso em minúsculas e com
+espaços **de propósito**, porque a advogada dita o código por telefone e o
+cliente o recebe por WhatsApp ou num papel. Uma máscara na tela de login
+recusaria `lex-77c8 8fvs`, que o servidor aceitaria — e o cliente ficaria de
+fora do próprio processo por causa de uma letra minúscula, sem ter como
+descobrir o motivo.
+
+Formatar visualmente enquanto se digita é permitido. **Recusar não é.** A única
+validação de cliente aceitável no login do portal é campo vazio, e há teste
+travando a ausência de regex de formato, de máscara e de comparação de caixa
+(`tests/portal/isolamento.test.js`).
+
+Generalizando: quando as duas pontas divergem sobre o que é entrada válida,
+**quem manda é a mais permissiva**. Validação de tela existe para poupar uma
+viagem, não para inventar regra que o servidor não tem.
+
+### A confirmação fica DEPOIS do conteúdo, nunca em modal bloqueante
+
+O bloco de confirmação é o último da tela do processo, depois dos dados e da
+lista de documentos.
+
+**O motivo é probatório, não estético.** Um modal que exigisse confirmar para
+ver inverteria o sentido do recibo: o cliente estaria declarando que leu algo
+que a interface ainda não lhe mostrou. O registro continuaria sendo gravado e
+continuaria dizendo "declaro que tomei ciência" — só que sobre nada. Ler
+primeiro e confirmar depois é o que faz o registro valer.
+
+Pelo mesmo motivo o texto da declaração é exibido **literalmente**, como o
+backend o envia, sem reescrever, resumir ou truncar. O backend copia a mesma
+constante para dentro de cada registro; se a tela mostrasse outra coisa, o
+cliente concordaria com um texto e o recibo afirmaria outro.
+
+### Redefinir a senha volta `senhaPortalProvisoria` para `true`
+
+**É deliberado, e é o fluxo de esquecimento.** O cliente perde a senha, a
+advogada cadastra uma nova no formulário do cliente, ele é obrigado a trocá-la
+no próximo acesso. Não existe "recuperar senha por e-mail" no portal, e não
+precisa existir: a advogada é o canal.
+
+Consequências na interface, que a Fase 3.2 escreveu:
+
+- a tela **diz** que gravar uma senha nova volta o acesso para provisória, no
+  lugar onde a advogada vai ler;
+- a senha **nunca** é exibida depois de gravada — é hash. A tela mostra
+  **estado**, não valor. Se alguém pedir "mostrar a senha", a resposta é que
+  não existe;
+- o campo de senha **não entra no payload quando está vazio**. Sem isso,
+  trocar o telefone de um cliente regravaria o acesso e derrubaria a senha que
+  ele já tinha definido — campo em branco significa "não mexer", não "apagar";
+- **revogar** tem rota própria (`DELETE /clients/:id/senha-portal`) e
+  confirmação em dois passos, porque é ação deliberada com consequência
+  imediata, não um campo esvaziado por descuido num formulário grande.
+
+### `select: false` NÃO protege documento recém-escrito
+
+**A armadilha do Mongoose, com ponto único de correção. Não reintroduzir.**
+
+`select: false` no schema protege a **consulta**: o Mongoose não pede o campo
+ao banco, então o documento lido não o traz. **Não protege o documento que
+acabou de ser escrito.** Quem faz `new Client(...)`, atribui o hash e chama
+`save()` tem o campo em memória — nenhuma consulta aconteceu, e não há `select`
+que atue sobre um objeto que nunca voltou do banco.
+
+Foi assim que `senhaPortalHash` saiu no 201 do cadastro de cliente na primeira
+execução da Fase 3.1, com a listagem limpa. O `select: false` estava lá,
+correto, e inútil para aquele caminho.
+
+**O ponto único é `config/mongooseDefaults.js`**, no `toJSON` global, que atua
+sobre a serialização e por isso pega os dois caminhos, para todo model. Regra
+que vale para todo model não se repete em cada schema — o próximo model com
+segredo esqueceria dela.
+
+A Fase 3.2 acrescentou `tests/isolation/escrita.test.js`, que varre as
+respostas de **escrita** (as de leitura já estavam cobertas) procurando o
+prefixo do bcrypt na string crua do corpo. **Medido por mutação:** neutralizar
+a lista de segredos do `toJSON` derruba os testes de `/clients` e **não** o do
+cadastro da advogada — `POST /auth/register` passa por `sanitizeUser`
+(`authService.js:57`), que monta a resposta campo a campo. São duas camadas
+independentes, e agora as duas têm teste.
+
+### Varredura de `catch` silencioso — Fase 3.2
+
+Rodada nos dois repositórios: **88 blocos `catch` no backend, 36 no frontend**.
+
+**Nenhum "engole erro sem sinal nenhum".** Os que não repassam nem logam têm
+consequência clara e comentário:
+
+| Local | Classificação |
+|---|---|
+| `middleware/portalAuthMiddleware.js:47` | engole deliberadamente — responde 401 `sessaoPortalInvalida` |
+| `scripts/resetDev.js:67` | engole deliberadamente — fechar conexão no caminho de erro |
+| `contexts/AuthContext.jsx:18` e `:42` | trata — limpa a sessão local |
+| `pages/documents/DocumentAssemblyPage.jsx:161` | engole deliberadamente — o erro já foi exibido e relançado |
+| `utils/viacep.js:26` | engole deliberadamente — contrato do módulo é "nunca lança" |
+| `utils/formatters.js:5` | trata — devolve "Data inválida" |
+| 7× `handleDuplicateKeyError` (backend) | trata — converte 11000 em 409 com `campo`, relança o resto |
+| ~11 `catch` de tela com `toast.error` | trata — mensagem ao usuário |
+
+**Achado deixado para uma fase futura, não corrigido:** `ClientFormPage.jsx:97`
+(hoje `:117` depois desta fase) faz `if (!endereco) return;` depois da busca de
+CEP. A falha é silenciosa **para o usuário**: quem digita um CEP e vê o
+formulário não preencher não distingue "CEP não existe" de "ViaCEP fora do ar".
+É decisão documentada no módulo (`utils/viacep.js:1-2`), e o caminho **não** é
+tocado por esta fase — entra como achado, não como correção de passagem.
+
+### Fora do portal por decisão: honorário e financeiro
+
+**Não é esquecimento**, e a Fase 4.1 **não reabriu** a decisão.
+
+O motivo original era que `Fee.status` não era derivado e a DEC-027/028 ia
+reescrever o vocabulário do módulo — exibir número financeiro seria mostrar,
+**para a pessoa errada**, um valor que ninguém mantém. A Fase 4.1 fechou o
+financeiro e a decisão **segue a mesma**: o portal é de acompanhamento do
+processo, e o extrato de honorários da advogada não é informação que o cliente
+precise ver ali. Ele recebe o recibo do que pagou, que é outra coisa.
+
+A varredura de `tests/portal/consulta.test.js` passou a incluir os nomes de
+campo novos — `percentual`, `valorBase`, `valorPago`, `saldoDisponivel`,
+`contratado`, `emAberto`, `parcialmente_pago` — em **todas** as rotas de dado do
+portal. Nomes de campo, e não só valores: um campo pode sair zerado hoje e
+preenchido amanhã, e a varredura precisa cair na primeira vez.
+
+### DEC-027 — EXECUTADA na Fase 4.1, em commit único
+
+Registrada na Fase 2E.2 como **um bloco só, não três itens espalhados** — três
+coisas num commit é onde se esquece uma. Saiu assim.
+
+**Commit: `dde2289`** — `feat(honorarios): DEC-027 — hook condicional, save() e
+`campo` no mesmo commit`. Os três pedaços, no mesmo diff:
+
+| Pedaço | Onde |
+|---|---|
+| 1. hook condicional de `percentual`/`valorBase` | `models/Fee.js` |
+| 2. `updateFee` de `findOneAndUpdate` para `save()` | `services/feeService.js` |
+| 3. `campo` nos erros de campo | `services/feeService.js`, `middleware/errorMiddleware.js` |
+
+**1. O hook.** `pre("validate")` no `Fee`: `percentual` obrigatório no tipo
+percentual e **recusado** nos demais; `valorBase` obrigatório sempre que houver
+percentual; faixa maior que zero e no máximo 100. Uma mensagem por campo, em
+português — `invalidate` com string produz `kind: "user defined"`, que o
+`errorHandler` repassa literalmente em vez de traduzir o texto cru do driver.
+
+**2. O `save()`.** Era o único ponto do service fora do `save()`.
+`runValidators: true` roda validador de **caminho**, e não `pre("validate")`: a
+regra do item 1 precisa enxergar `tipo`, `percentual` e `valorBase` juntos, e
+não teria como rodar por ali. O update é justamente onde a advogada troca o tipo
+de cobrança — era o caminho que ficaria sem regra. `createFee` também passou a
+`new` + `save()`, para as duas gravações seguirem o mesmo caminho.
+
+**3. O `campo`.** Sai quando **exatamente um** campo é responsável. Com dois,
+destacar o primeiro esconderia o segundo: a advogada corrigiria um, reenviaria e
+levaria o mesmo 400. O `errorHandler` repassa `campo` no 400 de
+`ValidationError` **só** quando um service o anexou de propósito — nunca
+deduzido de "só um caminho falhou", que mudaria a resposta de todo módulo de
+uma vez.
+
+**Uma correção de premissa.** O roteiro falava em "emitir `campo` nos 409 do
+`feeService`". O `feeService` **não tem** 409 de conflito de campo, e não
+passou a ter: o `Fee` não tem índice único nenhum, e inventar uma regra de
+unicidade para justificar o 409 seria mudança de negócio não pedida. Os erros
+de campo do honorário são **400** — os do hook e os da validação escrita à mão
+—, e é neles que `campo` passou a sair. O `getApiErrorField` do FeeFormPage lê
+`data.campo` **independente do status** (`utils/apiError.js:19`), então o helper
+saiu de inerte do mesmo jeito, que era o objetivo.
+
+O **409 de integridade** do `deleteFee` continua **sem** `campo`, com
+`dependencia` + `quantidade`. Não há input em conflito ali: há parcela gravada.
+`tests/financial/honorario.test.js` trava as duas pontas no mesmo bloco.
+
+### DEC-028 — status do honorário derivado das parcelas (Fase 4.1)
+
+`Fee.status` deixou de ser escrita explícita. **Commit: `d1f876d`.**
+
+| Estado | Quando |
+|---|---|
+| `pendente` | nenhuma parcela ativa com pagamento **e o honorário sem pago líquido alocado** |
+| `parcialmente_pago` | ao menos uma parcela paga, nem todas — **ou pago líquido alocado > 0** |
+| `pago` | todas as parcelas ativas quitadas |
+| `cancelado` | **apenas por escrita explícita** |
+
+#### EMENDA DE 17/08/2026 (Fase F-1a.2, achado A-4)
+
+> Registrada **dentro** da DEC-028, e não como decisão nova: é refinamento da
+> mesma regra, e o histórico precisa mostrar isso.
+
+**O que se via.** Na ficha da **"Ação de Cobrança de Dívida"**, o honorário
+"Assessoria tributária — processo administrativo" exibia, na mesma linha:
+
+> Recebido: **R$ 1.500,00**   ·   badge **"Pendente"**
+
+Uma contradição no mesmo honorário, entre dois números que estavam certos cada
+um por si.
+
+**A causa.** Depois do reparcelamento (DEC-037), o dinheiro recebido vive nas
+parcelas **canceladas COM vínculo**: a parcela 1, que era `parcial` com 1.500
+alocados, é cancelada com esses 1.500 intactos — o dinheiro não volta, e o saldo
+renegociado já o descontou. As parcelas novas nascem sem alocação. A derivação
+filtrava as canceladas fora do conjunto, sobrava "tudo pendente", e ela dizia
+`pendente` sobre um honorário que já recebera R$ 1.500,00.
+
+A ficha, por outro lado, publica "Recebido" como `pagoLiquidoAlocado` — a soma
+de `valorPago` de **todas** as parcelas, canceladas inclusive. **As duas
+leituras saíam de fontes diferentes**, e por isso podiam divergir.
+
+**A emenda.** Para distinguir `pendente` de `parcialmente_pago`,
+`derivarStatusFee` passa a considerar o **pago líquido alocado do HONORÁRIO** —
+a mesma grandeza que a ficha publica —, e não só o status das parcelas
+vigentes. As duas leituras passam a concordar porque agora saem da mesma fonte.
+
+**O que NÃO mudou, e é de propósito:**
+
+| Regra | Estado |
+|---|---|
+| `cancelado` é o único status escrevível, e **nunca** é sobrescrito pelo recálculo | **intacta** — a guarda continua sendo o `return` próprio em `recalcularStatusFee`, acima da derivação, e não foi tocada |
+| `pago` exige **em aberto zero** | **intacta** — só quando todas as parcelas VIGENTES estão `pago`. Dinheiro em parcela cancelada tira o honorário de `pendente`; **nunca** o promove a `pago` |
+| honorário sem parcela nenhuma é `pendente`, nunca `pago` | **intacta** — sem parcela não há alocação, então o pago é zero |
+
+**Onde está provado:** `tests/financial/derivacao.test.js`, seção 9 — um teste
+para o caso do reparcelamento e **dois de regressão**, um para cada linha da
+tabela acima. O invariante 3 de `tests/financial/invariantes.test.js` foi
+atualizado junto, porque ele recomputava a fórmula antiga.
+
+**Passo manual:** o **158** do roteiro, que olha o badge e o "Recebido" lado a
+lado. A contradição é visual: nenhuma asserção de valor a pega, e foi assim que
+o A-4 sobreviveu à suíte inteira da F-1a.
+
+**`cancelado` NUNCA é sobrescrito pelo recálculo.** Honorário cancelado não vira
+"pago" porque alguém quitou uma parcela antiga — a cobrança foi desfeita, e o
+dinheiro que entrou depois é outro assunto. Está escrito como **guarda com
+`return` próprio** em `recalcularStatusFee`, e não como efeito da ordem dos
+`if`: ordenação de condição some na primeira vez que alguém a reorganiza "para
+ficar mais legível", e some em silêncio.
+
+Descancelar é escrita explícita, e aí a derivação volta a valer. Sem isso a
+guarda deixaria o honorário preso para sempre.
+
+**Onde se pendura.** Na **mesma cadeia** que já recalculava a parcela:
+`recalcularStatusInstallment` (`paymentService.js`) chama `recalcularStatusFee`
+no fim. Todo caminho que grava ou desativa pagamento já passava por ela. **Não
+há segundo caminho paralelo.**
+
+Dois pontos que a cadeia de pagamento não alcança ganharam chamada explícita,
+porque mudam o **conjunto** de parcelas e não o pago de uma delas:
+
+- `deletarInstallment` — a parcela sai do conjunto, e
+  `recalcularStatusInstallment` devolveria `null` por filtrar `ativo: true`;
+- `atualizarInstallment` quando muda o `feeId` — o honorário de **origem**
+  também precisa recalcular, senão fica `parcialmente_pago` para sempre.
+
+`feeService` reconcilia depois de criar e de atualizar: `status` no corpo vale
+como intenção, e as parcelas decidem.
+
+**Honorário SEM parcela nenhuma é `pendente`.** A Fase 2C decidiu que, para as
+variáveis de template, honorário sem parcela vale como pagamento único — uma
+parcela do valor cheio. A leitura aqui é a mesma, levada até o fim: essa parcela
+existe e **não foi paga**, porque pagamento pendura em parcela e não há nenhuma.
+Chamar de `pago` um honorário que nunca recebeu um centavo seria o pior erro
+possível neste módulo.
+
+A derivação é feita sobre `Installment.status`, que já é derivado, e **não**
+sobre uma segunda soma de pagamentos: `pago` é exatamente `totalPago >= valor` e
+`parcial` é exatamente `0 < totalPago < valor`. Duas fórmulas para a mesma
+pergunta divergem.
+
+**O teste da Fase 2E.2 foi INVERTIDO, não apagado**, no mesmo arquivo
+(`tests/financial/chain.test.js`), com comentário dizendo que é a DEC-028 e em
+que fase ocorreu. O histórico do Git mostra a transição deliberada em vez de um
+teste que sumiu.
+
+### `valor` é o campo único que o resto do sistema lê
+
+No honorário percentual ele é **calculado pelo hook**, a partir de `percentual`
+× `valorBase`, arredondado em centavos. Nos demais é o que a advogada digitou.
+
+**Nenhum consumidor precisa saber o tipo.** Catálogo de variáveis, dashboard,
+gráfico de honorários por mês, ficha financeira e recibo leem `valor` e pronto.
+O que vier em `valor` no corpo de um honorário percentual é **descartado**: ali
+o valor não é opinião, é conta.
+
+Consequência para a Fase 4.2: no formulário de honorário percentual, o campo de
+valor é **exibição**, não entrada.
+
+### `valorPago` da parcela NUNCA é escrito por rota
+
+`Installment.valorPago` é a soma dos pagamentos **ativos** da parcela. Pagamento
+desativado sai da soma, porque a soma é **refeita** a cada recálculo em vez de
+incrementada.
+
+**Um único ponto de escrita:** `recalcularStatusInstallment`, que já computava
+`totalPago` para decidir o status. `installmentService` **recusa com 400** quem
+mandar `valorPago` no corpo, com `campo: "valorPago"` e mensagem apontando
+`POST /payments`. Recusa explícita, e não descarte silencioso: quem mandou o
+campo acreditava estar registrando um recebimento, e o silêncio o deixaria
+achando que registrou.
+
+**O 409 de excedente NÃO lê este campo.** Continua somando os pagamentos por
+consulta, porque o caminho de atualização precisa excluir o próprio pagamento em
+edição do total — coisa que um valor desnormalizado não sabe fazer. As quatro
+chaves e o `saldoDisponivel` seguem idênticos.
+
+### O timbrado é COMPARTILHADO entre documento e recibo
+
+`src/services/letterheadService.js`, extraído de `documentRenderService.js` na
+Fase 4.1 — primeira alteração naquele arquivo desde a Fase 2C, autorizada
+apenas para isto. **Commit: `6bf572c`.**
+
+Cabeçalho, rodapé, fontes, medidas e a normalização de nome de arquivo moram
+lá. O motivo é o recibo, que sai sobre o mesmo papel: duplicar a montagem
+garantiria divergência — em seis meses o cabeçalho do documento e o do recibo
+não seriam mais o mesmo, e ninguém notaria até a advogada colocar os dois lado a
+lado.
+
+| Arquivo | Fonte da verdade de |
+|---|---|
+| `letterheadService.js` | o **papel** — o que documento e recibo têm em comum |
+| `documentRenderService.js` | o visual do **documento** — corpo, parágrafos, justificação |
+
+**A extração se sustentou.** Foi refatoração pura, conferida por comparação do
+texto extraído do PDF antes e depois, com `renderizarPdf` chamado direto sobre
+um usuário literal — sem banco, saída determinística — nos dois caminhos do
+timbrado, com logo e sem. Diff vazio. O canário do documento editado à mão
+continua verde, e ganhou asserção sobre o timbrado dentro do mesmo PDF.
+
+`montarTimbrado` segue exportado de `documentRenderService.js` por
+compatibilidade: é de lá que ele é importado desde a Fase 2C.
+
+### O recibo NÃO é um `Document`
+
+`GET /api/payments/:id/recibo`. **Commit: `307ba01`.**
+
+Não cria registro na coleção de documentos, **não tem `visivelPortal`, não entra
+no portal**, não aparece na lista do processo. É emissão sob demanda: o PDF é
+montado, entregue e esquecido — e há teste provando que emitir duas vezes não
+muda a contagem de `/documents`.
+
+`Document` é peça composta por seções, com texto resolvido, rastreabilidade de
+origem e poder moderador da advogada sobre o texto final. O recibo não tem nada
+disso: é **função do pagamento**, e o pagamento já está gravado. Gravá-lo de
+novo criaria dois lugares dizendo a mesma coisa, livres para divergir quando o
+pagamento fosse corrigido.
+
+Só pagamento **ativo** — desativado responde 404. Recibo de pagamento estornado
+é justamente o papel que não pode existir. A cadeia inteira é conferida sob
+`{ usuarioId, ativo: true }`: parcela, honorário e processo desativados também
+dão 404.
+
+Quem paga é o participante **principal** do processo, lido da junção
+`ProcessoCliente` (a fonte da verdade desde a Fase 2B), com `clientePrincipalId`
+como segunda tentativa. Num litisconsórcio os demais são partes do processo, não
+do contrato de honorários.
+
+
+
+### DEC-020 — REVOGADA na Fase 4.5
+
+`normalizarStatus`, em `installmentService.js`, derivava o status da parcela a
+partir da data de vencimento. Foi declarada **intencional** no Bloco 11.
+
+A linha do tempo, honesta:
+
+| Quando | O quê |
+|---|---|
+| Bloco 11 | nasce e é declarada intencional |
+| Fase 4.1 (DEC-028) | `definirStatusInstallment` (`paymentService.js`) passa a ser a única derivação, com `parcial` a mais e a conta feita sobre os **pagamentos ativos**, não sobre a data |
+| Auditoria nº 2 | confirmada **sem nenhuma referência** |
+| Fase 4.5 | **removida**; `git grep normalizarStatus` volta zero |
+
+Não foi apagada por limpeza estética. Mantê-la deixaria duas derivações de
+status da parcela no mesmo módulo, uma delas **errada** — não conhece `parcial`
+e não olha pagamento nenhum — sem nada dizendo qual vale. É o formato de dívida
+que a próxima pessoa resolve chamando a função errada.
+
+### DEC-031 — cadastro aberto com 409 enumerável de e-mail. DECISÃO CONSCIENTE
+
+Registrada na Fase 4.5. **Não é achado em aberto; é escolha, e fica escrita
+para não ser "corrigida" por reflexo numa auditoria futura.**
+
+`POST /auth/register` é público e responde **409 `E-mail já cadastrado`** com
+`campo: "email"`. Isso permite enumerar quais e-mails têm conta no LEX.
+
+**Por que fica como está:**
+
+1. **O sistema é multi-tenant por design.** Qualquer pessoa pode criar a própria
+   conta — é assim que os colegas do Daniel entram para testar, e é assim que a
+   banca vai entrar na defesa. Não existe convite, não existe lista fechada:
+   "este e-mail tem conta" não é segredo num sistema em que qualquer um pode
+   criar a sua em dez segundos.
+2. **A alternativa custa usabilidade real.** A anti-enumeração honesta é
+   responder 201 genérico e mandar e-mail de confirmação — que exigiria provedor
+   de e-mail, fila e uma tela de "confira sua caixa", tudo fora do escopo do TCC
+   e sem nenhum ganho para a advogada. A alternativa preguiçosa (mensagem
+   genérica "não foi possível cadastrar") deixa quem já tem conta sem entender
+   por que o cadastro falhou.
+3. **A escala não justifica.** O ganho teórico de anti-enumeração é proteger uma
+   lista de usuários. A lista aqui tem UMA advogada real e algumas contas de
+   teste.
+
+**O que NÃO se aceita, e continua valendo:** o **login** não enumera. Os seis
+casos de falha do portal devolvem corpo e status byte-idênticos (DEC-029, ponto
+11), e o login da advogada não distingue "e-mail inexistente" de "senha errada".
+Enumerar no cadastro é aceitável; enumerar no login diria quem tem conta E
+serviria de oráculo para força bruta.
+
+**Reabrir só se** o LEX deixar de ter cadastro aberto — aí a enumeração passa a
+revelar uma lista que alguém escolheu fechar, e o cálculo muda.
+
+
+### Allowlist de PATCH — contrato de TODAS as entidades (Fase 4.5)
+
+`src/validations/shared/camposPermitidos.js` é a fonte única. Sete entidades:
+`clients`, `processes`, `fees`, `installments`, `payments`, `secoes`,
+`documents`.
+
+**Duas regras, e as duas são mudança de contrato deliberada:**
+
+1. **Campo desconhecido no corpo do PATCH → 400 com `campo`.** Antes era
+   ignorado em silêncio em `clients`, `fees` e `processes`. Quem mandava um
+   campo com nome errado recebia 200 e nenhuma alteração.
+2. **`ativo` não pertence a allowlist nenhuma.** Desativar é papel do DELETE —
+   que é onde vivem os 409 de integridade com `dependencia`/`quantidade`, e é
+   justamente essa checagem que o corpo do PATCH pulava. Reativar é papel das
+   rotas de reativação.
+
+**O que a fase mediu antes de corrigir**, contra o seed, com o servidor de pé:
+
+| Entidade | `PATCH {ativo:false}` antes | Efeito real |
+|---|---|---|
+| `clients` | 200 | desativado |
+| `processes` | **404** | **desativado** |
+| `fees` | 200 | desativado |
+| `installments` | 200 | desativado |
+| `payments` | 200 | desativado (`ativo` estava na allowlist **de propósito**) |
+| `secoes` | 400 | bloqueado |
+| `documents` | 400 | bloqueado |
+
+**O caso do processo não estava no relatório da auditoria e é o pior dos sete.**
+`updateProcess` grava por `findOneAndUpdate({ativo:true})` e relê por
+`getProcessById`, que também filtra `ativo:true`. A escrita ACONTECIA e a
+releitura não encontrava mais nada: a rota respondia **"Processo não
+encontrado"** para uma requisição que acabara de desativar o processo.
+Destruição relatada como erro de busca.
+
+**Dois defeitos que só apareceram quando os testes foram escritos:**
+
+- `PATCH /documents/:id {ativo:true}` respondia **200**. A guarda da Fase 2A
+  testava `payload.ativo === false`; `true` era ignorado em silêncio. Documento
+  era a única das sete que respondia conforme o VALOR do campo.
+- Campo desconhecido em `/documents` dava 400 **sem `campo`**, porque
+  `validateUpdateDocument` monta um `data` filtrado e o desconhecido era
+  descartado antes de chegar ao service. A allowlist passou a rodar sobre o
+  corpo **cru**, dentro da validação.
+
+**`validateUpdatePayment` mudou de lugar**: do controller para o service.
+Rodando antes do service, engolia a recusa da allowlist e devolvia "Informe ao
+menos um campo válido", sem `campo`. Era também o único módulo financeiro fora
+da convenção "validação sempre no service".
+
+### Rotas de reativação (Fase 4.5)
+
+| Rota | Guarda | Erro |
+|---|---|---|
+| `PATCH /api/payments/:id/reativar` | a **parcela** precisa estar ativa | 409 `dependencia: "parcela"` |
+| `PATCH /api/installments/:id/reativar` | o **honorário** precisa estar ativo | 409 `dependencia: "honorario"` |
+
+Sem corpo. As duas disparam a cadeia de recálculo até o honorário. Reativar
+pagamento **reconfere o excedente**: enquanto ele estava fora, outros podem ter
+ocupado o saldo da parcela.
+
+**Cliente, processo, honorário e documento NÃO ganham reativação nesta fase** —
+decisão de escopo. Os quatro têm cascata ou dependentes cujo comportamento na
+volta precisa ser decidido, e inventar isso de passagem seria pior que a
+ausência.
+
+**A colisão de `numeroParcela` na reativação NÃO é alcançável.** O índice
+`{feeId, numeroParcela}` é único **sem** `partialFilterExpression`
+(`models/Installment.js:70`), diferente dos de `documento_secao`, que são
+parciais em `ativo: true`. Sem filtro parcial, a parcela desativada nunca solta
+o número — não existe segunda parcela para colidir na volta. A checagem fica
+como rede, e há teste travando a premissa: se alguém tornar o índice parcial,
+ele cai.
+
+**`GET /payments?inativos=true` e `GET /installments?inativos=true`** listam
+**só** os desativados. É um MODO, não um "incluir": misturar os conjuntos faria
+a coluna de valor somar o que foi estornado sem nada dizendo isso na linha. O
+default não muda. Existe para a tela poder oferecer "Reativar" — sem ele a
+funcionalidade não teria porta de entrada.
+
+### O que o service worker NUNCA cacheia (Fase 4.5)
+
+O PWA é escrito à mão (`public/sw.js` no frontend), sem workbox e sem plugin.
+
+**`/api/*` nunca entra em cache.** Toda resposta da API é autenticada e pertence
+a UMA advogada: um cache dela é vazamento esperando o segundo usuário no mesmo
+navegador — e o isolamento por `usuarioId` é a regra central do projeto. Além
+disso, servir número financeiro velho de cache, sem nada dizendo que é velho,
+faria a advogada planejar o mês com o dado do mês passado.
+
+Também fora do cache: qualquer método que não seja `GET`, e qualquer origem que
+não seja a do app.
+
+
+### Classificação PF/PJ do catálogo e o vocabulário de `motivo` (Fase 4.6)
+
+Cada chave de origem `cliente` carrega `tipoCliente`: `pf`, `pj` ou `comum`
+(8 / 6 / 6). **A lista não foi escolhida a olho:** é exatamente o que o hook
+`pre("validate")` de `models/Client.js` apaga em cada tipo.
+
+**O caso que abriu a fase.** Um usuário real montou modelo com variáveis de PJ e
+gerou para cliente PF. A pendência dizia *"Preencha 'CNPJ' no cadastro do
+cliente"* — e seguir aquilo é **impossível**: o cadastro de um cliente PF não
+tem CNPJ, e se tivesse o hook o apagaria na gravação. A orientação mandava a
+pessoa a uma tela onde o campo não está.
+
+`errors.pendencias[]` ganhou **`motivo`**, de vocabulário fechado
+(`MOTIVO_PENDENCIA`), pelo mesmo motivo de `DEPENDENCIA` nos 409: sem lista, em
+duas fases existiriam `tipoIncompativel`, `tipo_incompativel` e `incompativel`.
+
+| `motivo` | Quando | Chaves que acompanham |
+|---|---|---|
+| `campoVazio` | o dado não foi preenchido | — |
+| `tipoIncompativel` | variável de PF com cliente PJ (ou o contrário) | `tipoVariavel`, `tipoCliente`, `causa` |
+| `tipoHonorarioIncompativel` | `{{percentualHonorario}}` em honorário fixo/custas | `tipoHonorario`, `causa` |
+| `parcelasDesiguais` | `{{valorParcela}}` com parcelas de valores diferentes | `causa` |
+
+**A tela separa os motivos**, e isso não é estética: incompatibilidade **não se
+resolve preenchendo cadastro**. Listá-la junto de "faltam 3 dados" convidaria a
+advogada a procurar um campo que não existe — que é o beco original com outra
+roupa.
+
+### O princípio: orientação EXECUTÁVEL, testada
+
+Toda pendência responde três perguntas — o que falta, por quê, e onde/como
+resolver — e **a ação sugerida é seguida até o 201 por um teste**
+(`tests/documents/mensagens.test.js`, os blocos "ANTI-BECO").
+
+Uma asserção de texto prova que a frase existe; não prova que segui-la leva a
+algum lugar. As três mensagens antigas estavam gramaticalmente corretas e
+mandavam a advogada a ações impossíveis:
+
+| Antes | Por que era beco | Agora |
+|---|---|---|
+| *"Preencha 'CNPJ' no cadastro do cliente"* | cliente PF não tem CNPJ | diz a causa e manda vincular um cliente PJ **ou** usar outro modelo |
+| *"Preencha 'Percentual do honorário' no honorário…"* | o hook do `Fee` responde **400** a isso | manda trocar o **tipo** para percentual, com `percentual` e `valorBase` |
+| *"Preencha 'Valor da parcela' no honorário…"* | **esse campo não existe** | diz que as parcelas divergem e manda igualá-las |
+
+Há teste que executa a orientação antiga do percentual e **exige o 400** — se
+ela passar a funcionar, o beco deixou de existir e o teste avisa.
+
+**`GET /api/documents/modelos/:id/compatibilidade?clienteId=`** (Fase 4.6):
+leitura, responde 200 mesmo quando o resultado é "não serve", e devolve as
+**seções** culpadas junto das variáveis — a advogada pensa em seções, não em
+chaves. **Não bloqueia a geração**: o 422 é a rede, este é o alerta, e bloquear
+impediria gerar um documento cujo trecho incompatível ela pretenda apagar no
+texto final.
+
+### Dois contratos alterados na Fase 4.6
+
+1. **`422` de modelo sem seções ganhou `errors.pendencias[]`**, como todos os
+   demais 422 do módulo. Era o único fora do formato, e obrigava o frontend a
+   tratar dois formatos.
+2. **`POST /api/fees` não exige mais `status`.** O schema já tem
+   `default: "pendente"` e a DEC-028 deriva o valor das parcelas — exigi-lo era
+   pedir ao cliente HTTP o único valor possível num honorário recém-criado.
+   Enviado, continua **validado** contra o enum: mudou a obrigatoriedade, não a
+   validação. Nenhuma requisição que funcionava antes deixou de funcionar.
+
+**A sugestão de variável** (`{{nomeAdvogado}}` → *"você quis dizer
+{{nomeAdvogada}}?"*) é distância de edição escrita à mão em `templateParser.js`,
+com teto de 1/3 do nome. Sem teto, `{{xpto}}` sugeriria `{{sexoCliente}}` — e
+sugestão errada com cara de certeza é pior que nenhuma. Sem candidata, a
+mensagem aponta o **grupo** provável pelo sufixo. `{{nomeAdvogado}}` foi o nome
+real da chave até a Fase 2D.2, que renomeou **sem alias**: quem cola texto de
+anotação antiga cai exatamente nisto.
+
+### Vocabulário de tipo de honorário — PENDENTE DE RATIFICAÇÃO
+
+```
+TIPOS_HONORARIO    fixo, percentual, custas
+STATUS_HONORARIO   pendente, parcialmente_pago, pago, cancelado
+```
+
+Os dois estão em `src/models/Fee.js`, exportados, e `feeValidation.js` os
+**importa** em vez de reescrever — duas listas escritas à mão divergem na
+primeira fase que acrescentar um valor.
+
+**`TIPOS_HONORARIO` precisa de ratificação da advogada antes de a Fase 5
+documentar.** Os três valores vêm da Fase 1 e nunca foram conferidos com ela: é
+vocabulário jurídico da prática dela, não decisão técnica. "Custas" é despesa
+processual e não honorário, e pode ser que o lugar dela não seja este enum;
+"êxito" e "sucumbência" podem ser tipos que faltam. **Nada disso se decide
+aqui.** `STATUS_HONORARIO`, ao contrário, é vocabulário do sistema e está
+fechado pela DEC-028.
+
+### Envelope é contrato de LISTAGEM, não de resposta em geral
+
+Registrado na Fase 2E.2. O envelope
+`{ data, total, page, limit, totalPages }` descreve uma **listagem**. Em
+resposta de **mutação**, `total`, `page` e `limit` não descrevem nada.
+
+Por isso `PATCH /documents/:id/secoes/reordenar`
+(`documentController.js:159`) devolve **array cru de propósito**. Não é
+divergência a corrigir, e uma varredura literal vai continuar acusando — é
+falso positivo conhecido.
+
+A Fase 2E.1 padronizou as **duas listagens** que faltavam
+(`GET /processes/:id/clientes` e `GET /documents/:id/secoes`) e **parou aí,
+corretamente**.
+
+**A ficha financeira do processo (Fase 4.1) NÃO usa o envelope.** É a segunda
+resposta do projeto a ficar de fora, e pelo mesmo motivo do array cru da
+reordenação: ali não há listagem. Há **um** processo, com uma árvore embaixo e
+três totais em cima.
+
+`page` e `limit` não descreveriam nada, e paginar honorário seria pior do que
+inútil — partiria o total ao meio, e a advogada leria "recebido" de meia ficha.
+
+A forma escolhida é um objeto com quatro chaves de primeiro nível:
+
+```
+{
+  processo:   { _id, numeroProcesso, titulo, status, tipoAcao },
+  totais:     { contratado, pago, emAberto, honorarios, honorariosCancelados },
+  honorarios: [ { …, totais: { contratado, pago, emAberto },
+                  parcelas: [ { …, valorPago, emAberto, pagamentos: [ … ] } ],
+                  documentos: [ … ] } ],
+  geradoEm:   Date
+}
+```
+
+Os totais são calculados no **backend**, em três níveis. A tela não faz conta:
+somar no frontend seria somar o que foi baixado, e no dia em que a ficha ganhar
+recorte o total viraria o do recorte sem ninguém notar.
+
+Honorário **cancelado** fica fora de `contratado` — a cobrança foi desfeita, e
+somá-la faria a advogada ler como devido um valor que ela mesma cancelou. Ele
+continua na lista, com o status à vista e com contagem própria em `totais`:
+sumir da ficha levaria junto o histórico.
+
+`tests/financial/ficha.test.js` trava a AUSÊNCIA de `data`, `page`, `limit`,
+`totalPages` e `total`, para que uma uniformização futura caia no teste.
+
+### Risco conhecido de dependência — REMEDIDO na Fase F-0
+
+O bloco abaixo, escrito na Fase 2E.2, **descrevia um quadro que mudou**. A
+auditoria de retomada rodou `npm audit` de novo e encontrou outra coisa; o
+registro histórico fica preservado logo em seguida, porque ele explica por que
+o `react-router-dom` está na versão em que está.
+
+**Medido na F-0 (2026-08-17):**
+
+| Repo | Total | Pacote | Cadeia | Sai no bundle? |
+|---|---|---|---|---|
+| Backend | **1 high** | `brace-expansion` | `nodemon → minimatch` | não — devDependency |
+| Frontend | **3 high** | `brace-expansion`, `js-yaml` | `eslint` | não — devDependency |
+| | | `nanoid` | `vite → postcss` | não — só build |
+
+**As quatro são de cadeia de desenvolvimento. Nenhuma chega ao navegador da
+advogada nem ao servidor em produção.**
+
+**Duas afirmações do bloco de 2E.2 ficaram falsas:**
+
+1. **O GHSA-qwww-vcr4-c8h2 do `react-router` não é mais reportado.**
+   `react-router-dom@7.18.2` / `react-router@7.18.2` continuam instalados e o
+   `npm audit` de hoje não os acusa. O risco residual que a 2E.2 aceitou por
+   escrito **deixou de existir na base de advisories** — a decisão de manter a
+   versão continua válida, mas não é mais uma decisão de risco.
+2. **"As outras 5 exigem `eslint@10`, major"** — hoje as quatro restantes têm
+   `fixAvailable` **sem major**. A F-0 **não as atualizou**: a fase autorizou
+   apenas `mongoose` e `express-rate-limit`, nomeadamente, e subir a cadeia do
+   `eslint` de passagem é o tipo de mudança que se faz na fase que a decidiu.
+   Fica como item de backlog, não como risco aceito.
+
+**Atualizado na F-0, dentro do semver:** `mongoose` 9.8.1 → **9.9.2**,
+`express-rate-limit` 8.6.1 → **8.6.2**. Suíte verde nos dois casos.
+
+**`bcryptjs` 2.4.3 → 3.x foi ADIADO, e é decisão consciente.** É major, e o
+pacote fica no caminho de autenticação da advogada **e** do portal do cliente —
+o lugar onde uma mudança de comportamento de hash não aparece em teste de
+unidade e aparece no login de quem já tem senha gravada. Entra em fase que
+tenha autenticação no escopo, com releitura do changelog e do formato de hash.
+
+---
+
+### Risco conhecido de dependência do frontend — o registro de 2E.2
+
+Registrado na Fase 2E.2. Se alguém rodar `npm audit` na defesa, a resposta
+precisa estar escrita. **Resposta honesta é melhor que otimista**, e por isso
+o registro não é "15 → 7". **Ver o bloco acima para o quadro atual** — este
+aqui ficou como histórico da decisão do `react-router`.
+
+**O que se ganhou.** A atualização da Fase 2E.1 fechou **3 vulnerabilidades
+de produção que atingiam o navegador**: `axios` 1.13.2 → 1.19.0 (alta),
+`form-data` 4.0.4 → 4.0.6 (alta), `follow-redirects` 1.15.11 → 1.16.0
+(moderada). **O bump do `axios` se pagou.**
+
+**O que não se ganhou.** O bump do `react-router-dom` de 7.9.5 para 7.18.2
+foram **nove minors e não fechou a vulnerabilidade**.
+`react-router-dom@7.18.2` fixa `react-router: "7.18.2"` exato, não existe
+`react-router-dom` 8.x, e a correção de **GHSA-qwww-vcr4-c8h2** está em
+`react-router@8.3.0`, major. Ou seja: **assumimos risco de regressão sem
+ganho de segurança naquele pacote.** Manter a versão nova é decisão de
+**coerência de lockfile, não de benefício**.
+
+**Por que o risco residual é aceito.** O **modo RSC não é usado**: o app é
+SPA com `BrowserRouter`, e as 11 APIs de `react-router-dom` em uso
+(`BrowserRouter`, `Routes`, `Route`, `Link`, `NavLink`, `Navigate`,
+`Outlet`, `useNavigate`, `useParams`, `useSearchParams`, `useLocation`)
+resolvem em 7.18.2 sem depreciação. **O caminho vulnerável não existe neste
+código.**
+
+**As outras 5** (`brace-expansion`, `minimatch`, `@eslint/*`) exigem
+`eslint@10`, major, e **não saem no build** — são cadeia de desenvolvimento.
+
+---
+
+## Limites permanentes
+
+- **Nenhuma dependência nova** sem decisão explícita. Subir a *versão* de
+  pacote existente, dentro do semver, para fechar vulnerabilidade, não conta
+  como dependência nova.
+- **Nunca `npm audit fix --force`** — sobe major de Express/Mongoose e quebra
+  a API.
+- **Não alterar `documentRenderService.js`** fora de fase que o tenha no
+  escopo. O mesmo vale agora para **`letterheadService.js`**, que saiu de
+  dentro dele na Fase 4.1 e é onde o timbrado passou a morar: mexer ali muda o
+  papel do documento **e** o do recibo de uma vez.
+- **Não alterar o catálogo de variáveis.** Divergência encontrada se
+  **reporta**, não se corrige de passagem.
+- Não mexer em `Fee` nem no financeiro fora da Fase 4. Não criar portal fora
+  da Fase 3. A Fase 4.1 fechou o **backend** financeiro; a 4.2 é de tela e
+  **não** reabre model, service nem contrato de rota.
+- **Não reescrever histórico publicado.** Sem `rebase`, `reset --hard` ou
+  `push --force` sobre `main`. Correção de coisa mergeada é commit novo, para
+  a frente.
+- Não expor secrets, senhas, tokens, strings de conexão ou IPs. Não alterar
+  `.env`.
+- **Confirmação de visualização não cascateia e não se apaga.** Exceção
+  deliberada ao soft delete — ver DEC-029.
+- Não remover regra de isolamento (`usuarioId`) nem filtro `ativo: true`.
+- `git push` só com confirmação explícita.
+- **Nenhuma rota do portal reaproveita service da advogada.** Ler o model
+  direto e projetar por `portalProjection.js`.
+
+---
+
+## Comandos
+
+```bash
+npm run dev            # nodemon src/server.js — porta 3001
+npm start              # node src/server.js
+LEX_BANCO=lex_test npm run seed:banca3 -- --banco lex_test --confirmar-reset   # ← o usual (DEC-065)
+npm run seed:fresh     # LEGADO: reset + seed:demo no banco do .env (hoje, lex_prod)
+npm run seed:demo      # LEGADO: só popula
+npm run reset:dev      # LEGADO: só derruba (dropCollection — apaga índices)
+```
+
+Conta do seed da banca: **lexuepg2026@gmail.com** / **LexBanca2026**; portal
+**LEX-2026-BANC** / **LexBanca2026**. A conta do seed legado era
+`demo@lex.dev` / `Lex123456`.
+
+Portal do cliente (Fase 3.1): senha **provisória** `Portal2026` (Ana Lima) e
+senha **própria** `MinhaSenha2026` (Maria e Joao, do litisconsórcio). O código
+de acesso de cada vínculo sai no resumo final do seed.
+
+### Contagens esperadas do seed
+
+| Coleção            | Qtde |
+|--------------------|------|
+| `clients`          | 8    |
+| `processes`        | 10   |
+| `processo_clientes`| 12   |
+| `fees`             | 12   |
+| `installments`     | 23   |  ← 20 + 3 nascidas do reparcelamento |
+| `payments`         | 15   |  ← todos ativos: pagamento não se desativa (DEC-032) |
+| `alocacoes`        | 17   |  ← 15 ativas + 2 desfeitas por estorno |
+| `estornos`         | 2    |  ← 1 total e 1 parcial |
+| `reparcelamentos`  | 1    |  ← 2 parcelas canceladas COM vínculo |
+| `documents`        | 19   |
+| `secoes`           | 11   |
+| `documento_secao`  | 41   |
+| `confirmacoes_visualizacao` | 2 |
+
+**Estados financeiros do seed (atualizado na F-1a):** os quatro derivados
+continuam presentes — `cancelado` 1, `pago` 3, `parcialmente_pago` 5,
+`pendente` 3.
+
+**Os cinco casos do Financeiro 2.0 que o seed exercita**, todos pelos services
+de verdade (nada é escrito à mão no banco, então um seed que roda até o fim é
+teste de fumaça do módulo inteiro):
+
+| Caso | Onde |
+|---|---|
+| pagamento que atravessa **duas parcelas** | divórcio litigioso — PIX de 4.500 |
+| **estorno total** com desalocação | fase inicial — boleto devolvido |
+| **estorno parcial** com desalocação | usucapião — contestação do cartão |
+| **adiantamento** com auto-alocação posterior | inventário — 5.000 antes das parcelas |
+| **sobra** virando saldo adiantado | recurso administrativo — 3.500 sobre 3.000 |
+| **reparcelamento** com parcelas canceladas-com-vínculo | assessoria tributária — 2 viram 3 | O
+`cancelado` tem a parcela **integralmente paga**: é o caso que prova a guarda da
+DEC-028, e o resumo do seed imprime os estados justamente para que ele apareça.
+O seed exercita **48 de 48** chaves do catálogo, contadas do banco e não das
+constantes, e confere ativamente o **422** de `{{percentualHonorario}}` num
+honorário fixo.
+
+**Lacunas intencionais do seed — não são bug:**
+- Beatriz Ramos Pereira (PF) **sem `profissao`** → gerar para "Usucapião de
+  Imóvel Urbano" retorna 422 apontando `{{profissaoCliente}}`. Serve para ver
+  a tela de pendência.
+- Agro Campos Gerais Ltda (PJ) **sem representante legal** → exibe os dois
+  estados na tela de detalhe.
+- "Inventário e Partilha de Bens" tem **2 participantes** (litisconsórcio) e
+  **2 procurações** do mesmo modelo, uma por outorgante.
+- 1 documento **editado à mão** e 1 documento **com lacuna `[...]`**.
+
+---
+
+## Repositórios
+
+- Backend: https://github.com/lexuepg2026-droid/LEX-back
+- Frontend: https://github.com/lexuepg2026-droid/LEX-front
+
+---
+
+## Rotina de encerramento de sessão
+
+Antes de fechar qualquer sessão, peça:
+
+> "Atualize o CLAUDE.md com o que foi feito hoje, os arquivos alterados,
+> decisões tomadas, pendências e próximo passo recomendado."
+
+---
+
+## Registro de sessões
+
+> As sessões de 2026-05-06 a 2026-05-12 estão preservadas no fim do arquivo,
+> na forma original. Da Fase 1.3 em diante o registro passa a ser **por
+> fase**, que é como o trabalho passou a ser organizado.
+
+### Fase 1.3 — Correções de contrato da API
+
+**Resumo:** erros do Mongoose passam a virar 4xx em vez de 500; `campo` nos
+409 para o frontend destacar o input certo; `PATCH` adotado como verbo de
+update; limitador de senha separado do de login.
+
+**Decisões:** update por `save()` e não `findOneAndUpdate()` — só assim o
+`pre("validate")` roda e a validação condicional do schema vale também no
+update. `PUT` fica como alias depreciado onde já existia.
+
+**Commits:** `7342d36`, `8f55a5e`, `4e28b4b`, `7a7b88c`, `94fcc43`
+
+---
+
+### Fase 2A — Composição por seções, modelos e geração
+
+**Resumo:** nasce o módulo de documentos como composição. Models `Secao` e
+`DocumentoSecao`, catálogo de variáveis, CRUD de seções, vínculos com ordem,
+modelos e geração com substituição de variáveis.
+
+**Decisões:** catálogo **fechado**, validado no cadastro da seção e não na
+geração. Reordenação em **duas fases** por causa do índice único
+`{documentoId, ordem}`. Empurrão de posição no `POST /:id/secoes`.
+Autocorreção de ordens inválidas na leitura, em vez de transação, porque a
+janela de risco é de milissegundos.
+
+**Commits:** `c5c45f9`, `6baf864`, `7f61c6c`, `d44c870`, `0dcf4ed`
+
+---
+
+### Fase 2B — Participantes do processo
+
+**Resumo:** um processo passa a ter **vários** clientes, com papel. Model
+`ProcessoCliente` (junção N:N), `Process.clienteId` renomeado para
+`clientePrincipalId`, endpoints de participantes, código de acesso sob
+demanda, e geração recebendo o cliente **explicitamente**.
+
+**Decisões:** a junção é a fonte da verdade; `clientePrincipalId` é derivado e
+existe só para leitura rápida. Criação de processo com array de participantes
+**em transação**. Cliente informado sem vínculo ativo é **400** — emitir
+procuração qualificando quem não é parte é o erro que a checagem impede.
+Regerar para outro cliente do mesmo processo é documento **novo**.
+
+**Commits:** `93414ab`, `9a1893b`, `8e1265f`, `3fcb453`, `19452b7`,
+`dd82385`, `7e28842`
+
+---
+
+### Fase 2C — Renderização, honorário e lacunas
+
+**Resumo:** download em PDF e DOCX com timbrado, logo do escritório em
+`advocacia.logoBase64`, variáveis de honorário (inclusive valor por extenso),
+escolha do honorário quando há ambiguidade, texto final editável e detecção de
+lacunas.
+
+**Decisões:** `documentRenderService.js` é a **fonte da verdade do visual** —
+timbrado é camada de renderização, não Seção. Nunca adivinhar qual honorário
+alimenta o contrato: N ativos ⇒ 422 pedindo escolha. Lacuna avisa e **não**
+bloqueia; pendência de cadastro bloqueia. Limite do corpo JSON elevado a
+400 kb para caber o logo em base64. `pdfmake` mantido em 0.3.11.
+
+**Commits:** `ad5ad7f`, `d501591`, `1acc9bf`, `c812b43`, `9033028`,
+`721421f`, `b8e218f`, `fd0e5c9`
+
+---
+
+### Fase 2D.1 — Biblioteca de Seções e catálogo rotulado
+
+**Resumo:** catálogo ganha rótulo e descrição escritos à mão para cada chave,
+com guarda de carga; busca de seções insensível a acento; correções pendentes
+da 2C e anteriores.
+
+**Decisões:** rótulo e descrição **nunca derivados da chave** — derivação
+produz "Nome Cliente", "Cpf Cliente", que funciona e parece amador.
+`assertCatalogoRotulado()` roda na carga do módulo e **derruba o processo** se
+faltar rótulo. Contagem do catálogo fixada em **47** (a auditoria da 2C falava
+em 45 por erro de contagem, não divergência real).
+
+**Achados reportados e deixados para depois:** 6 vulnerabilidades no
+`npm audit`; chaves do catálogo no masculino com rótulo no feminino;
+`CLAUDE.md` desatualizado; `src/utils/texto.js` duplicando `semAcento`.
+
+**Commits:** `2bad694`, `60d885b`, `0792745`
+**Merge em `main`:** `bca674a`
+
+---
+
+### Fase 2D.2 — Tela de montagem, texto final e download
+
+**Resumo:** manutenção herdada da 2D.1 e a tela de montagem de documentos no
+frontend.
+
+**Manutenção (backend):**
+- `npm audit`: 6 → 0 vulnerabilidades, via `npm update` dentro do semver.
+  **`package.json` não mudou uma linha** — todas as correções couberam nos
+  ranges já declarados. `path-to-regexp` 8.3.0→8.4.2, `mongoose` 9.3.2→9.8.1,
+  `body-parser` 2.2.2→2.3.0, `qs` 6.15.0→6.15.3, e as duas de `nodemon`
+  (`brace-expansion`, `picomatch`) saíram junto.
+- `nomeAdvogado` → `nomeAdvogada`, `cpfAdvogado` → `cpfAdvogada`. Eram as
+  **únicas duas** chaves com gênero na origem `usuario`; as outras oito não
+  têm. Sem alias. Catálogo segue em 47, guarda passando, texto resolvido
+  byte-idêntico ao de antes.
+- Este `CLAUDE.md`, reescrito: eram 7 módulos documentados contra 10 reais,
+  sem `Secao`, `DocumentoSecao` nem `ProcessoCliente`, e o último registro era
+  de 2026-05-12.
+
+**Achados que NÃO se reproduziram** (a 2D.1 os reportou, mas a `main` atual já
+está correta — verificado, nada alterado):
+- `DocumentFormPage.jsx` com indentação corrompida e chaves órfãs nas linhas
+  30–36: o arquivo está bem-formado, sem tabs, sem CRLF, sem espaço em fim de
+  linha, indentação de 2 espaços consistente.
+- `ClientPage.css` usando `--bg-button`, `--text-button` e `--bg-color`
+  inexistentes: os três **existem**, no bloco "Legado" de `variables.css`,
+  declarados em `:root` **e** em `body.light-mode`. Varredura completa dos
+  `.css` e `.jsx`: **63 tokens consumidos, 0 inexistentes.**
+
+**Decisões:** o `DocumentFormPage.jsx` é formulário de **upload**
+(`urlArquivo` obrigatório), e a decisão 16 tira upload da interface. Ele
+segue vivo e fora da navegação nova — remover é decisão de outra fase.
+
+---
+
+### Fase 2E.1 — Correções da auditoria geral
+
+**Resumo:** vulnerabilidades do frontend, 409 com informação estruturada,
+envelope das duas listagens que faltavam, tratamento de erro nas telas,
+`PATCH` no processo, remoção de código morto e `__v` fora da saída JSON.
+
+**Backend:**
+- `config/integrityConflicts.js` (novo) — vocabulário fechado de
+  `dependencia` e das regras de conflito. Contrato completo documentado
+  acima, em "Contrato do 409".
+- `config/mongooseDefaults.js` (novo) — `toJSON` global tirando `__v` da
+  saída. **Não** `versionKey: false`: o `__v` continua gravado, verificado
+  por consulta direta ao driver. As duas consultas com `.lean()` do projeto
+  (`listProcesses` e `getProcessById`) resolvem por `.select("-__v")`, porque
+  `lean()` não passa por `toJSON`.
+- `errorHandler` com **allowlist** de chaves estruturadas, em vez de repassar
+  propriedade do `Error` por nome solto.
+- `GET /processes/:id/clientes` e `GET /documents/:id/secoes` no envelope
+  padrão, montado no service como todos os outros.
+
+**Frontend:**
+- `npm update` dentro do semver: 15 → 7 vulnerabilidades. As 3 de produção
+  fecharam (axios, form-data, follow-redirects). `package.json` não mudou
+  uma linha — só o lock.
+- 13 telas passam a usar `getApiErrorMessage`; as 2 de detalhe deixam de
+  mentir sobre a causa; os 4 formulários que faltavam passam a destacar o
+  campo do 409 (7 de 7 agora).
+- Apagados `components/ui/Button.jsx`, `Card.jsx` e `Card.css`.
+  **`Button.css` continua**, importado por `PageHeader.jsx`.
+
+**Decisões:**
+- **`campo` não entra em 409 de integridade referencial.** Ele existe para
+  destacar input, e ali o conflito é entre registros gravados. Ver o contrato
+  acima — é a decisão central desta fase.
+- O 409 de excedente de pagamento **não** foi forçado no formato
+  `dependencia`/`quantidade`, que não descreveriam nada nele. Ganhou `regra`,
+  `saldoDisponivel`, `valorParcela` — e `campo: "valorPago"`, porque ali
+  existe input em conflito de verdade.
+- `secaoService.deleteSecao` recebeu as duas chaves de integridade sem estar
+  na lista da auditoria: era o único 409 de integridade que ficaria falando
+  língua diferente, e é isso que o vocabulário fechado existe para evitar.
+
+**Onde um serviço de relato de erro se ligaria:** os 6 `console.error` de
+`catch` do frontend foram removidos — a mensagem ao usuário permanece. É
+**exatamente nesses `catch`** que um Sentry/Rollbar entraria, se um dia
+existir: `ClientFormPage`, `ClientDetailPage`, `ProcessFormPage`,
+`ProcessDetailPage` (2) e `LoginPage`. Os logs do **backend** não foram
+tocados — são saída de CLI, log operacional ou diagnóstico documentado.
+
+---
+
+### Fase 2E.2 — Suíte de testes automatizados
+
+**Resumo:** primeira coisa executável do repositório. 101 testes no backend
+(`node --test`, sem dependência nova) e 47 no frontend, mais varredura estática
+de classe CSS, correção dos defeitos que ela achou e o roteiro manual de 83
+para 79 passos.
+
+**Backend:** infraestrutura em `tests/helpers/` — guarda de banco que aborta se
+a URI apontar para `lex` ou para banco sem "test" no nome, app em porta
+efêmera, pote de cookies sobre `fetch` nativo, fábricas com CPF/CNPJ de dígito
+válido, e extração de texto de PDF com `node:zlib` (ToUnicode CMap), sem
+instalar nada. Blocos: isolamento (86 tentativas, 0 vazamentos), cadeia
+financeira, geração de documento, invariantes de vínculo.
+
+**Achados reportados e NÃO corrigidos:** `Fee.status` não é derivado das
+parcelas — teste trava o comportamento atual para a Fase 4 cair nele; e a
+cadeia de `substituidoPorId` está gravada mas não é navegável pela API, porque
+não há rota que leia documento inativo.
+
+**Frontend:** varredura de "classe aplicada sem regra alcançável", que achou 3
+defeitos reais — `ui-btn` inalcançável em 3 telas e no `Modal`, `.wizard-step` e
+`.breadcrumb-item` sem regra em lugar nenhum. Corrigidos. `utilities.css`
+apagado.
+
+---
+
+### Fase 3.1 — Portal do cliente: backend, confirmação e suíte
+
+**Resumo:** primeira vez que o LEX expõe dado a alguém que não é a advogada.
+Autenticação própria por código de acesso + senha, projeção allowlist,
+confirmação de visualização imutável, e 69 testes novos (101 → 170).
+
+**Arquivos novos:** `config/portalSecret.js`, `config/portalErrors.js`,
+`config/portalEstados.js`, `config/textoConfirmacao.js`,
+`models/ConfirmacaoVisualizacao.js`, `services/portalAuthService.js`,
+`services/portalService.js`, `services/portalProjection.js`,
+`services/confirmacaoService.js`, `controllers/portalAuthController.js`,
+`controllers/portalController.js`, `middleware/portalAuthMiddleware.js`,
+`routes/portalRoutes.js`, `validations/portalAuthValidation.js`.
+
+**Decisões**, todas com o porquê nos blocos acima: segredo separado com guarda
+de subida; token carregando o carimbo da senha para a troca invalidar o
+anterior; sessão de 2h; 401 unificado com bcrypt rodando sempre; texto da
+confirmação vindo do backend e copiado para dentro do registro; confirmação
+imutável e sem cascata; contador de não vistas dentro de `getSummary` em vez de
+rota nova.
+
+**Quatro defeitos meus, achados por teste antes do commit:** `select: false`
+não protege o documento recém-escrito (o hash saía no 201 de cadastro, e a
+correção foi centralizar em `mongooseDefaults.js`); a recusa de CPF como senha
+estava inalcançável por ordem das checagens; o registro de acesso corria com a
+requisição seguinte e o pipeline nem funcionava, porque o Mongoose 9 exige
+`updatePipeline: true` e um `catch` silencioso engoliu o erro; e
+`POST /confirmacoes` estava montado depois do portão genérico, então o código
+de erro específico nunca saía.
+
+**Isolamento:** 66 rotas da advogada e 8 do portal varridas nas duas direções,
+86 tentativas cruzadas, 20 respostas varridas campo a campo, **0 vazamentos**.
+
+**Não tocado:** frontend (Fase 3.2), `Fee`/`Installment`/`Payment`,
+`documentRenderService.js`, catálogo de variáveis, envelope de `/auth`.
+
+---
+
+### Fase 3.2 — Portal do cliente: interface, confirmação e lado da advogada
+
+**Resumo:** a interface do portal, no mesmo app Vite, sob `/portal/*`, em chunk
+próprio; o lado da advogada (senha de portal, entrega do código, selo por
+participante, histórico de confirmações, contador no dashboard); e a correção
+do aviso de visibilidade na regeração. Backend 170 → 176 testes, frontend
+47 → 65.
+
+**Backend — só verificação e um teste novo.** `tests/isolation/escrita.test.js`
+(6 testes): as varreduras da 2E.2 e da 3.1 cobriram respostas de LEITURA;
+faltava a de ESCRITA, que é onde a falha já aconteceu. Resultado: **não há
+vazamento**, e o motivo não é o que se supunha — ver "`select: false` não
+protege documento recém-escrito", acima. Nenhum arquivo de produção do backend
+foi alterado nesta fase.
+
+**Frontend — arquivos novos:** `api/portalAxios.js`, `api/portalService.js`,
+`contexts/PortalAuthContext.jsx`, `components/portal/PortalLayout.jsx`,
+`components/portal/Portal.css`, `components/portal/PortalProtectedRoute.jsx`,
+`components/portal/PortalDocumentList.jsx`,
+`components/portal/PortalConfirmation.jsx`,
+`components/processes/AccessDelivery.jsx`, `pages/portal/PortalLoginPage.jsx`,
+`pages/portal/PortalPasswordPage.jsx`, `pages/portal/PortalProcessPage.jsx`,
+`utils/portalLabels.js`, `tests/portal/isolamento.test.js`.
+
+**Frontend — alterados:** `routes/AppRoutes.jsx` (ramo `/portal` em `lazy()`),
+`pages/clients/ClientFormPage.jsx` + `ClientPage.css` (bloco de acesso),
+`pages/processes/ProcessDetailPage.jsx` + `ProcessPage.css` (entrega, selo,
+histórico), `components/ui/StatusBadge.jsx` (3 estados de portal no mapa que já
+existia), `pages/dashboard/DashboardHomePage.jsx` + `DashboardPage.css`
+(sétimo cartão), `components/documents/GenerationPanel.jsx` +
+`GenerationPanel.css` (aviso de visibilidade), `api/clientService.js`,
+`api/processService.js`.
+
+**Decisões**, com o porquê nos blocos acima: portal no mesmo app com instância
+de HTTP, contexto e layout próprios; a tela nunca mais rígida que a API; a
+confirmação depois do conteúdo; redefinir volta a provisória; o aviso de
+visibilidade valendo para os dois caminhos de regeração.
+
+**Dois achados que corrigiram premissas do próprio prompt:**
+
+1. **A varredura de CSS pegou um defeito real.** As páginas do portal aplicavam
+   classes cuja regra só chegava pela folha que o *layout* importa. O layout
+   monta as páginas por `<Outlet/>` — dependência que só existe pela árvore de
+   rotas não é alcançável por análise estática, e a varredura estava certa em
+   acusar. Correção: cada página do portal importa `Portal.css`, não uma
+   entrada de allowlist.
+2. **A premissa da regeração não se reproduziu.** Ver a tabela dos dois
+   caminhos, acima. Regerar documento visível e não editado **não** o tira do
+   portal: o anterior continua ativo e visível, e o cliente segue vendo a
+   versão antiga. O texto do aviso foi corrigido depois de medir contra a base
+   do seed, com o servidor de pé.
+
+**Reportado e NÃO implementado, por decisão de escopo:** a indicação de "há
+confirmação nova" **na listagem** de processos. Nenhuma rota da 3.1 devolve
+confirmação não vista por processo — `getSummary` devolve um escalar global
+(`dashboardService.js:31,63`) e `listProcesses` anexa participantes só com
+`{_id, clienteId, papel, principal}` (`processService.js:165-176`). Consultar
+`/processes/:id/confirmacoes` por linha seria N+1. O contrato da 3.1 não se
+muda nesta fase; a adição mínima que destravaria é um contador por processo na
+listagem.
+
+**Não tocado:** contrato das rotas da 3.1, `Fee`/`Installment`/`Payment`,
+`documentRenderService.js`, catálogo de variáveis, envelope de `/auth`,
+`axiosConfig.js`. **Nenhuma dependência nova em nenhum dos dois repositórios** —
+`package.json` e `package-lock.json` idênticos a `main` nos dois.
+
+---
+
+### Fase 4.1 — Financeiro: DEC-027, DEC-028, ficha do processo e recibo
+
+**Resumo:** o módulo mais antigo do projeto, o único nunca revisto, fecha. Três
+dívidas registradas há fases saem juntas, `Fee.status` passa a ser derivado,
+nasce a ficha financeira do processo e o recibo de pagamento em PDF. Backend
+176 → 234 testes. **Frontend não tocado** — as telas são a Fase 4.2.
+
+**Commits, um por parte, exceto a DEC-027 que é um só de propósito:**
+
+| Commit | Parte |
+|---|---|
+| `dde2289` | DEC-027 — hook condicional + `save()` + `campo`, **commit único** |
+| `d1f876d` | DEC-028 — status derivado das parcelas |
+| `b54084d` | `valorPago` desnormalizado na parcela |
+| `2a4fba3` | `PATCH` em fees, installments e payments |
+| `0b14937` | `percentualHonorario` — catálogo 47 → 48 |
+| `fe0760e` | ficha financeira do processo |
+| `6bf572c` | extração do timbrado para módulo compartilhado |
+| `307ba01` | recibo de pagamento em PDF |
+| `ea6be25` | seed |
+| `dc630d9` | suíte |
+
+**Arquivos novos:** `services/letterheadService.js`, `services/receiptService.js`,
+`services/financeiroService.js`, `tests/financial/honorario.test.js`,
+`tests/financial/derivacao.test.js`, `tests/financial/ficha.test.js`,
+`tests/financial/recibo.test.js`.
+
+**Decisões**, todas com o porquê nos blocos acima: honorário sem parcela é
+`pendente` e nunca `pago`; `percentualHonorario` formatado com vírgula decimal e
+símbolo colado ("12,5%"); a ficha financeira **fora** do envelope de listagem; a
+extração do timbrado **se sustentou** (texto extraído idêntico antes e depois); o
+recibo **não é** `Document`; o portal continua **sem nada financeiro**.
+
+**Duas premissas do roteiro que não se reproduziram**, reportadas e não
+"corrigidas":
+
+1. **O `feeService` não tem 409 de conflito de campo.** O roteiro pedia `campo`
+   nos 409 dele; o `Fee` não tem índice único nenhum, e nenhum foi inventado. Os
+   erros de campo do honorário são 400, e é neles que `campo` passou a sair — o
+   `getApiErrorField` lê `data.campo` independente do status, então o helper
+   saiu de inerte do mesmo jeito.
+2. **`installmentService.js:229` não é um 409.** É o `throw` de 404 de
+   `deletarInstallment`; o 409 de integridade está cinco linhas abaixo. Nada
+   alterado por causa da referência errada.
+
+**Um desvio deliberado do roteiro, com motivo:** o 409 de excedente **não**
+passou a ler `Installment.valorPago`. O caminho de atualização precisa excluir o
+próprio pagamento em edição do total, e um valor desnormalizado não sabe fazer
+isso. O campo sustenta a ficha financeira; o 409 continua somando por consulta.
+
+**Não tocado:** frontend, contrato das rotas do portal, envelope de `/auth`,
+`PATCH /documents/:id/secoes/reordenar`, nenhum alias `PUT` removido.
+**Nenhuma dependência nova** — `package.json` idêntico a `main`.
+
+---
+
+### Fase 4.3 — Indicadores do dashboard (DEC-028d) e a consistência com a ficha
+
+**Resumo:** o resumo financeiro global ganha o recorte do mês, o valor do
+vencido e os próximos vencimentos — e passa a **fechar com a soma das fichas**,
+o que não acontecia. Backend 234 → 248 testes. Nenhum model, nenhuma rota nova,
+nenhuma dependência.
+
+**Arquivos alterados:** `services/dashboardService.js` (só
+`getFinanceiroResumo`), `tests/isolation/tenant.test.js` (1 teste novo).
+**Arquivo novo:** `tests/financial/resumo.test.js` (13 testes).
+
+**Decisões**, com o porquê no contrato acima: a cadeia do resumo filtrada como
+a da ficha; `pendente` como `contratado − recebido`; `recebidoNoMes` saindo de
+`Payment`; fronteiras de mês em UTC; `getSummary` deixado intacto.
+
+**Um achado que a fase mediu em vez de supor.** O roteiro pedia "se hoje não
+bater, o resumo se ajusta à ficha". Não batia, e a divergência foi medida
+contra o seed antes de qualquer alteração: 72.000/26.600 no resumo contra
+71.200/25.800 nas fichas. `pendente` batia **por coincidência** — os dois erros
+se cancelavam, o que é o pior formato possível para um defeito de soma.
+
+**`proximosVencimentos` mudou o perfil de risco da rota.** Até a 4.2 o resumo
+devolvia quatro escalares: um vazamento ali seria um total inflado, feio e
+mudo. Agora a rota devolve **identidade** — id de parcela, id de processo,
+número do processo e descrição do honorário. Por isso a varredura de isolamento
+ganhou um teste dedicado a esse array, com contraprova positiva (uma parcela
+futura de B, criada no próprio teste, porque as do arranjo comum vencem em
+datas fixas de 2026 e já passaram).
+
+**Não tocado:** frontend, models, `getSummary`, `getFeesByMonth`,
+`financeiroService.js`, contrato da ficha, rotas do portal.
+**`package.json` idêntico a `main`.**
+
+---
+
+### Fase 4.4 — Módulo de documentos: o gráfico sem cancelado (e nada mais)
+
+**Resumo:** a fase foi de frontend. O backend entrou com **uma** alteração de
+produção — `getFeesByMonth` deixa de somar honorário cancelado — e um arquivo
+de teste. Backend 248 → 255.
+
+**Por que o diff é mínimo, e isso é o resultado:** a fase começou com uma
+auditoria do bug da folha de montagem e do contrato de edição pós-geração. Nos
+dois casos o backend estava **correto e já testado**:
+
+1. **A folha.** A sequência inteira da tela foi reproduzida por HTTP contra o
+   servidor real — POST sem `ordem`, POST com `ordem`, PATCH reordenar, DELETE.
+   Todos os passos responderam certo, com `secaoId` populado e `ordem` na
+   sequência esperada. O defeito era o ciclo de vida de um efeito do React.
+   **Nenhuma correção de contrato foi necessária.**
+2. **O editor pós-geração.** O contrato da 2C já estava inteiro e coberto por
+   `tests/documents/generation.test.js`: `PATCH /:id/texto` liga
+   `editadoManualmente`; regerar sem `confirmarSobrescrita` responde 409; com
+   ela responde 201, o anterior sai por soft delete com `substituidoPorId`, e o
+   documento novo nasce `editadoManualmente: false`. O download de documento
+   editado à mão traz o texto **editado**, em PDF e em DOCX, com o texto
+   extraído do arquivo dentro do teste. **Faltava interface, não contrato.**
+
+**Arquivos alterados:** `services/dashboardService.js` (só `getFeesByMonth`).
+**Arquivo novo:** `tests/financial/graficoMensal.test.js` (7 testes).
+
+**Não tocado:** `documentService.js`, `documentGenerationService.js`,
+`documentRenderService.js`, `letterheadService.js`, models, contrato de rota
+nenhum. **`package.json` idêntico a `main`.**
+
+---
+
+
+### Fase 4.5 — Correções da Auditoria Geral nº 2
+
+**Resumo:** o contorno do `ativo` fechado nas sete entidades, reativação
+explícita, guardas de tipo nos filtros, preparo de produção, PWA à mão e a
+cobertura que faltava. Backend 255 → **311**. Frontend 213 → **240**.
+
+**A fase saiu em DUAS sessões, e a divisão está no histórico:** a primeira
+implementou as Partes 1, 2, 5.3, 5.4 e 6 e **parou corretamente** ao descobrir
+que a suíte do backend não rodava (`lex_test` com bad auth no Atlas) — escrever
+trinta testes sobre cinco services financeiros sem poder executá-los, e mergear
+isso, seria o oposto do que este projeto faz. A segunda sessão retomou com a
+senha corrigida, escreveu os testes e completou o resto.
+
+**Arquivos novos (backend):** `validations/shared/camposPermitidos.js`,
+`utils/filtrosDeConsulta.js`, `tests/integrity/allowlist.test.js`,
+`tests/integrity/reativacao.test.js`, `tests/infra/filtros.test.js`,
+`tests/infra/producao.test.js`, `tests/financial/invariantes.test.js`,
+`tests/financial/percentualVetores.test.js`, `tests/auth/perfil.test.js`,
+`tests/fixtures/percentualVetores.json`.
+
+**Arquivos novos (frontend):** `public/manifest.webmanifest`, `public/sw.js`,
+`public/icone-192.png`, `public/icone-512.png`, `src/registrarSW.js`,
+`tests/css/foco.test.js`, `tests/pwa/pwa.test.js`,
+`tests/financial/percentualVetores.test.js`, `tests/fixtures/percentualVetores.json`.
+
+**Decisões**, com o porquê nos blocos acima: allowlist como contrato único;
+`ativo` fora de todo corpo de PATCH; reativação em rota própria com guarda; o
+recálculo do honorário deixando de exigir parcela ativa; guardas de tipo que
+não dependem do default do `query parser`; `trust proxy: 1` e não `true`; HSTS
+só em produção; o SW sem `/api/*`; DEC-031 registrada; DEC-020 revogada.
+
+**Quatro premissas do roteiro que NÃO se reproduziram**, reportadas e não
+forçadas:
+
+1. **Não havia injeção de operador ativa.** Medido: `?tipo[$ne]=clausula`
+   devolvia o total INTEIRO, não o filtrado — o Express 5 usa o query parser
+   `simple`, que entrega `tipo[$ne]` como chave literal. A guarda entrou porque
+   a proteção era do framework, não do código: uma linha de configuração
+   transformaria os quatro filtros em injeção de uma vez, sem nenhum teste cair.
+2. **A colisão de `numeroParcela` na reativação é inalcançável** — índice único
+   sem `partialFilterExpression`. Ver o bloco das rotas de reativação.
+3. **O item 5.5 (datas dos testes em fuso local) não existe.**
+   `resumo.test.js` e `graficoMensal.test.js` já derivavam o mês com
+   `getUTCFullYear`/`getUTCMonth`. Varredura por getters locais nos dois
+   arquivos: nenhum. **Descartado, nada implementado.**
+4. **O 2.5b não é mais alcançável pela API** depois da Parte 1.1: `PATCH
+   {ativo:false}` morreu, `deletarInstallment` já recusava com 409 havendo
+   pagamento ativo, e reativar pagamento exige parcela ativa. A correção
+   permanece como defesa em profundidade e como reparo de base já corrompida —
+   e o teste monta o estado por escrita direta, com o motivo escrito.
+
+**Um erro meu, pego pela asserção de guarda do próprio teste:** o teste da ordem
+do arredondamento usava `33.33% de 1000`, e `1000 * 33.33` dá exatamente 33330
+em ponto flutuante — as duas ordens coincidiam e o teste não provava nada. O
+`assert.notEqual` que existia justamente para isso reprovou o par, e o caso
+passou a ser `8.75% de 987654.32`, em que a ordem realmente aparece.
+
+**Não tocado:** `documentRenderService.js`, `letterheadService.js`, catálogo de
+variáveis, contrato das rotas do portal, envelope de `/auth`.
+**Nenhuma dependência nova** — `package.json` idêntico a `main` nos dois repos.
+Os ícones do PWA foram gerados por script descartável com o PIL do ambiente.
+
+---
+
+
+### Fase 4.6 — Mensagens que orientam
+
+**Resumo:** o conflito PF/PJ passa a dizer a verdade, e os sete becos sem saída
+da lista 5.2 do Raio-X são fechados um a um — cada orientação nova com um teste
+que a SEGUE até o 201. Backend 311 → **327**. Frontend 240 → **250**.
+
+**Arquivos novos (backend):** `tests/documents/mensagens.test.js`.
+**Arquivos novos (frontend):** `components/documents/PendenciaList.jsx` + `.css`,
+`tests/documents/mensagens.test.js`.
+
+**Alterados (backend):** `config/templateVariables.js` (classificação `pf`/`pj`/
+`comum`, `MOTIVO_PENDENCIA`, `caminhoDoCampo`, orientação reescrita),
+`services/documentGenerationService.js` (`detalharPendencia`,
+`compatibilidadeService`, `parcelasDesiguais` na origem do honorário),
+`utils/templateParser.js` (distância de edição), `validations/secaoValidation.js`,
+`validations/feeValidation.js`, `controllers/documentController.js`,
+`routes/documentRoutes.js`, `tests/documents/generation.test.js` (duas asserções
+de texto atualizadas — a mudança de mensagem é o produto da fase).
+
+**Decisões**, com o porquê nos blocos acima: a classificação sai do hook do
+`Client` e não de julgamento; `motivo` em vocabulário fechado; a tela separa
+incompatibilidade de campo vazio; o aviso preventivo avisa e **não** bloqueia; a
+lista de pendências vira componente único para as duas telas.
+
+**O pior beco não estava na mensagem, e sim no descarte dela.**
+`DocumentFinalTextPage` tratava o 422 com `toast.error(message)` — e o `message`
+do backend é "há informações faltando no cadastro", que **não nomeia nada**. O
+comentário no código afirmava que "a mensagem do backend já nomeia o que falta".
+Não nomeia: os nomes vivem em `errors.pendencias[]`, que aquela tela jogava
+fora. A advogada clicava em Regerar e não tinha como descobrir o que faltava.
+
+**Não tocado:** o motor de resolução (nenhuma mudança de semântica —
+`substituir`, `montarValores` e a ordem das pendências continuam idênticos),
+`documentRenderService.js`, `letterheadService.js`, rotas do portal.
+**Nenhuma dependência nova.**
+
+---
+
+---
+
+## Financeiro 2.0 — DEC-032 a DEC-039 (Fase F-1a)
+
+> O módulo financeiro foi reescrito sobre um modelo novo. As oito decisões
+> abaixo nasceram nos cabeçalhos dos arquivos da fundação (commit `2c639ee`) e
+> estão transcritas aqui por extenso — até esta fase o raciocínio existia só no
+> código, e um `CLAUDE.md` que não o carrega deixa a próxima sessão reabrindo
+> discussão fechada.
+>
+> **A Fase F-1 foi DIVIDIDA em três.** Ver o bloco "A divisão F-1a/b/c", no fim.
+
+### DEC-032 — o pagamento é IMUTÁVEL
+
+`Payment` deixou de ter `installmentId` e deixou de ser editável.
+
+| Antes (até F-0) | Agora |
+|---|---|
+| `installmentId` obrigatório | `honorarioId` — o vínculo com parcelas virou `Allocation` |
+| `valorPago`, `dataPagamento` | `valor`, `data` |
+| PATCH de 5 campos | PATCH de **um**: `observacoes` |
+| `DELETE /payments/:id` | **não existe** — estornar é o caminho |
+| `PATCH /payments/:id/reativar` | **não existe** (ver DEC-034) |
+
+**Um registro de dinheiro que muda de valor não é registro, é rascunho.** A
+advogada precisa poder responder, meses depois, "quanto entrou, quando, e por
+que parte disso voltou" — e um PATCH que reescreve o valor apaga exatamente
+essa pergunta, sem deixar rastro de que houve correção.
+
+`observacoes` fica porque é **anotação sobre o fato, não o fato**.
+
+**`ativo` continua no schema e nenhuma rota o escreve.** O soft delete
+universal é regra central do projeto e a coleção mantém o campo por
+uniformidade de leitura. O que mudou é que não há caminho para gravá-lo.
+
+**Não houve migração**: não existe base de produção, e o seed é a única
+população. O modelo antigo morreu inteiro.
+
+**`formaPagamento` foi PRESERVADO** contra a lista de campos do roteiro
+original da F-1. A advogada registra por onde o dinheiro entrou, a listagem
+filtra por isso e o recibo imprime. Tirar o campo seria perder informação real
+para encurtar um contrato.
+
+### DEC-033 — estorno, e por que ele não é um campo
+
+Coleção `estornos` (`models/Reversal.js`). Corrigir dinheiro gravado deixou de
+ser edição e passou a ser um **registro novo que aponta para o anterior**.
+
+**Imutável de verdade: sem PATCH e sem DELETE.** Um estorno errado se desfaz
+com OUTRO estorno, do tipo `anulacao`, apontando o anulado por
+`estornoAnuladoId`. Três fatos, três registros, nenhuma reescrita.
+
+**`ativo` NÃO existe neste model, e a ausência é deliberada.** Em todo o resto
+do projeto `ativo: false` significa "excluído"; aqui, "estorno que não vale
+mais" é o que a anulação descreve. Ter os dois mecanismos daria duas maneiras
+de anular a mesma coisa, e um relatório que somasse por um deles ficaria errado
+sem ninguém notar.
+
+**"Estorno ativo" é resposta de CONSULTA, não campo gravado**
+(`reversalService.mapaDeAnulacoes`). Campo desnormalizado com duas fontes de
+escrita é campo que diverge — a mesma razão pela qual `Installment.valorPago`
+tem ponto único de escrita.
+
+**Um estorno só pode ser anulado UMA vez**, garantido por índice único parcial
+em `estornoAnuladoId`. A checagem no service é a mensagem amigável (409 que
+orienta); o índice é o que segura numa corrida entre duas requisições.
+
+**A anulação re-aloca pela regra normal**, e não repõe o dinheiro exatamente
+nas parcelas de onde ele saiu: entre o estorno e a anulação o mundo pode ter
+mudado — uma parcela pode ter sido reparcelada, outra quitada por outro
+pagamento. Repor no estado antigo criaria alocação em parcela cancelada.
+
+| Situação | Resposta |
+|---|---|
+| estorno acima do líquido | **422**, `errors.estornavel` diz o teto |
+| pagamento já estornado por inteiro | **422**, `errors.estornavel: 0` |
+| anular estorno já anulado | **409** `estornoJaAnulado` |
+| anular uma anulação | **409** `anulacaoDeAnulacao` |
+| anular estorno de outro pagamento | **409** `estornoInexistente` |
+
+### DEC-034 — as duas rotas de reativação MORRERAM
+
+`PATCH /api/payments/:id/reativar` e `PATCH /api/installments/:id/reativar`,
+criadas na Fase 4.5, respondem **404**.
+
+As duas existiam para desfazer um soft delete. Com o Financeiro 2.0:
+
+- **pagamento** não se desativa — ele se estorna (DEC-033), e o estorno se
+  desfaz por anulação. Os dois registram um fato novo em vez de reescrever o
+  antigo; uma rota que devolvesse o pagamento ao ar apagaria o motivo pelo qual
+  ele saiu;
+- **parcela** que sai de circulação por decisão da advogada sai por
+  reparcelamento (DEC-037), cancelada COM `reparcelamentoId`. "Reativar" uma
+  dessas ressuscitaria uma cobrança que foi substituída, ao lado da que a
+  substituiu: as duas somariam, e a advogada cobraria duas vezes.
+
+**`ativo` continua fora de toda allowlist de PATCH** (Fase 4.5), e isso ficou
+MAIS importante e não menos: é agora a única coisa entre a advogada e um
+registro financeiro desativado em silêncio por um campo de formulário.
+
+`tests/integrity/reativacao.test.js` foi **reescrito, não apagado** — trava os
+404, os caminhos que tomaram o lugar das rotas, e as duas premissas estruturais
+que ele já protegia.
+
+### DEC-035 — o motor de alocação
+
+Um pagamento não pertence a uma parcela: ele gera `Allocation`s. Um PIX que
+cobre duas parcelas passa a ser **um** pagamento com **duas** alocações, em vez
+de dois pagamentos e dois recibos.
+
+**As duas ordens, e por que são opostas:**
+
+- **alocar: do vencimento mais ANTIGO para o mais novo.** É o que qualquer
+  pessoa faz com uma dívida — paga o que está vencido primeiro. Alocar no mais
+  novo deixaria a parcela vencida em aberto com dinheiro no caixa, e a listagem
+  mostraria "vencida" para quem acabou de pagar;
+- **desalocar: do mais NOVO para o mais antigo.** Espelhada, e não igual. Um
+  estorno desfaz o efeito do pagamento na ordem inversa em que ele aconteceu.
+  Desalocar do mais antigo faria uma parcela antiga voltar a dever enquanto uma
+  nova continuasse quitada pelo mesmo dinheiro estornado — estado que nenhuma
+  leitura humana explica.
+
+**Três decisões INTOCÁVEIS, registradas na fundação:**
+
+1. **Alocação negativa é proibida.** Desalocar carimba `estornoId` na linha; não
+   existe `Allocation` de valor negativo. Uma linha negativa somaria certo e
+   leria errado — e nenhum extrato explicaria "alocação de −R$ 300".
+2. **Estorno parcial SUBSTITUI a linha da alocação.** A original é carimbada e
+   uma linha nova, com o resto, toma o lugar dela. A alternativa descartada era
+   reduzir `valor` na linha existente: seria uma linha a menos e uma mentira —
+   o registro passaria a dizer que sempre alocou o valor menor, e o extrato
+   perderia a informação de que houve alocação maior antes.
+3. **Preview e criação usam a MESMA função de planejamento**
+   (`planejarAlocacao`, pura). É isso que impede o preview de mentir: se ele
+   mostrar algo diferente do que o POST faz, é porque alguém escreveu a regra
+   duas vezes — e aqui não há como.
+
+**O 409 `pagamentoExcedeParcela` foi REVOGADO.** Ele recusava um fato: o cliente
+depositou 3.500 numa cobrança de 3.000, e o sistema mandava a advogada registrar
+outra coisa — o depósito real não existia em lugar nenhum. O valor agora
+atravessa as parcelas seguintes e o resto vira saldo (DEC-036). O valor saiu do
+vocabulário fechado `REGRA_CONFLITO`: lista fechada com entrada morta é como
+alguém volta a emitir a regra achando que ela vale.
+
+**Toda conta passa por `emCentavos`.** Somar float em cima de float acumula
+resíduo, e resíduo aqui é a advogada lendo "em aberto: R$ 0,00000000001" ou,
+pior, uma parcela que nunca fecha porque falta 1e-13.
+
+### DEC-036 — `saldoAdiantado`, para que nada se perca
+
+`Fee.saldoAdiantado` guarda dinheiro recebido que ainda não achou parcela.
+Alimentado por pagamento sem parcelas em aberto e pela SOBRA de um pagamento
+que cobriu tudo. Consumido automaticamente quando parcelas novas nascem, do
+primeiro vencimento em diante, virando `Allocation`s de origem `saldoAdiantado`.
+
+Sem ele, o troco de um pagamento maior teria de ser **recusado** (e a advogada
+registraria um valor que não foi o que entrou) ou **descartado em silêncio**
+(pior). Com ele, o dinheiro fica visível no extrato até encontrar destino.
+
+**As alocações de saldo nascem sem pagamento novo**, com `origem:
+"saldoAdiantado"`: o dinheiro já tinha entrado, e o extrato precisa distinguir
+"entrou hoje" de "encontrou destino hoje". Sem essa distinção, o cartão
+"recebido no mês" contaria duas vezes o mesmo real.
+
+**A auto-alocação dispara quando a parcela NASCE** — criação avulsa, criação em
+lote e reparcelamento. Sem isso, a advogada registraria um adiantamento,
+emitiria as parcelas e veria todas em aberto com o dinheiro parado no saldo, e
+"resolveria" lançando o pagamento de novo — criando um recebimento que nunca
+existiu.
+
+**`tipo` do pagamento (`comum` / `adiantamento`) é DESCRITIVO, não um segundo
+motor.** Ver "Decisões tomadas por conta própria" — este ponto foi alterado em
+relação à fundação nesta fase.
+
+### DEC-037 — reparcelamento com VÍNCULO
+
+`POST /api/fees/:id/renegotiations`. Coleção `reparcelamentos`.
+
+Renegociar **não apaga** as parcelas antigas: as que estavam em aberto ganham
+`status: "cancelado"` **e** `reparcelamentoId` apontando para o registro. O
+histórico conta a história — "estas cinco viraram aquelas três, nesta data, por
+este motivo" — e some inteiro se as antigas forem deletadas. É a mesma tese da
+confirmação de visualização da DEC-029: **prova que some não serve para nada**.
+
+**A soma das parcelas novas tem de igualar EXATAMENTE o saldo em aberto.**
+Aceitar soma diferente seria aceitar que a operação mude o valor devido sem
+dizer. Renegociar prazo é uma coisa; dar desconto é outra, tem nome, tem
+consequência contábil e precisa de decisão explícita — não pode acontecer como
+efeito colateral de uma conta que não fechou. O **422** devolve
+`errors.saldoEsperado` e `errors.somaInformada` justamente para ela ver os dois
+números e decidir.
+
+**Parcelas PAGAS ficam intactas** — não entram no cancelamento, no snapshot nem
+na conta. O dinheiro já foi recebido e a cobrança correspondente foi cumprida;
+cancelá-las apagaria a quitação. As **PARCIAIS** são canceladas com vínculo, e o
+que já foi alocado nelas fica onde está, como histórico: só o que faltava entra
+no saldo renegociado.
+
+**O snapshot `parcelasCanceladas` não é redundância.** A parcela continua
+existindo e legível, mas o `valorPago` dela pode mudar depois (um estorno
+desaloca), e a leitura "quanto estava em aberto quando renegociamos" deixaria
+de ser recuperável. O snapshot congela o que a conta usou.
+
+**A numeração das parcelas novas CONTINUA a sequência**, não recomeça em 1: o
+índice `{feeId, numeroParcela}` não é parcial (Fase 4.5), então a parcela
+cancelada nunca solta o número, e recomeçar colidiria na primeira.
+
+### DEC-038 — `historicoStatus` append-only, com ORIGEM
+
+`Fee.historicoStatus` registra cada transição de status. **Ponto único de
+escrita: `services/statusHistory.js`.**
+
+Um array append-only cuja escrita estivesse espalhada por três services
+registraria as transições que alguém lembrou de registrar, e a advogada leria os
+buracos como "não mudou". **Pior que histórico nenhum: um incompleto parece
+completo.**
+
+**Por que uma função, e não um hook `pre("save")`:** o hook não sabe a ORIGEM.
+Ele enxerga que `status` mudou de `pendente` para `pago`, mas não se foi
+recálculo, cancelamento explícito ou reparcelamento — que é justamente a
+informação que distingue "o sistema derivou" de "alguém decidiu".
+
+| `origem` | Quando |
+|---|---|
+| `criacao` | a linha de nascimento (`de: null`) |
+| `recalculo` | derivação normal da DEC-028 |
+| `cancelamento` | escrita explícita de/para `cancelado` |
+| `reparcelamento` | o plano foi refeito |
+
+**A origem VIAJA pela cadeia de recálculo** (`recalcularParcelas` →
+`recalcularStatusInstallment` → `recalcularStatusFee`). Carimbá-la depois não
+funciona, e a primeira versão desta fase tentou: quando o bloco explícito
+rodava, o recálculo já tinha gravado a transição como `recalculo` e
+`registrarStatus` devolvia `false` por status igual. O teste do invariante 9
+pegou.
+
+**Status igual não vira linha**: um recálculo que confirma `pendente` mil vezes
+encheria o array de ruído e enterraria as mudanças reais.
+
+**`feeService` não escreve `status` por `Object.assign`.** O campo é retirado do
+payload e passa pelo ponto único — senão o histórico nasceria com buracos
+exatamente no cancelamento, que é a transição mais importante.
+
+### DEC-039 — `config/tiposHonorario.js`. **PROVISÓRIA**
+
+O vocabulário de tipo de honorário saiu de `models/Fee.js` para arquivo
+próprio, com valor gravado e rótulo de exibição separados, para que ratificar a
+lista com a advogada vire acrescentar uma linha lá. O `Fee` reexporta, porque é
+de lá que meio projeto importa desde a Fase 1 — trocar todos os imports de uma
+vez seria churn sem ganho.
+
+**A decisão é PROVISÓRIA e aguarda ratificação da Laís.** É vocabulário
+jurídico da prática dela, não decisão técnica, e esta fase **não acrescentou
+nem tirou nenhum valor**: continuam `fixo`, `percentual`, `custas`.
+
+As perguntas em aberto são as mesmas registradas desde a Fase 4.6: "custas" é
+despesa processual e pode não pertencer a este enum; "êxito" e "sucumbência"
+podem ser tipos que faltam. **Nada disso se decide sem ela.**
+
+O que a fase FEZ foi tirar a segunda lista de rótulos do projeto — havia um mapa
+local em `Fee.js` ao lado do enum, e duas listas para a mesma pergunta divergem.
+
+---
+
+### O contrato das rotas novas (F-1a)
+
+| Verbo | Caminho | Nota |
+|---|---|---|
+| POST | `/api/payments` | nasce contra `honorarioId`; devolve `{ pagamento, alocacoes, sobra, saldoAdiantado }` |
+| POST | `/api/payments/preview` | o que ACONTECERIA; não grava nada |
+| POST | `/api/payments/:id/reversals` | estorno e anulação (`estornoAnuladoId`) |
+| GET | `/api/payments/:id/reversals` | os estornos do pagamento, com `anulado` |
+| GET | `/api/fees/:id/statement` | **extrato** — linha do tempo mesclada, paginada |
+| POST | `/api/fees/:id/renegotiations` | reparcelamento |
+| GET | `/api/fees/:id/renegotiations` | os reparcelamentos do honorário |
+| GET | `/api/financeiro/processos/:id/payments` | pagamentos do processo, paginados |
+
+**O extrato é agregado por LEITURA. Nenhuma coleção de log nova.** Cada evento é
+derivado de um registro que já existe e já é imutável — `Payment`, `Reversal`,
+`Allocation`, `Renegotiation` e o `historicoStatus` do `Fee`. Uma coleção de
+eventos separada seria uma SEGUNDA fonte da verdade sobre os mesmos fatos, livre
+para divergir no dia em que alguém gravasse num lugar e esquecesse do outro — e
+um extrato que discorda da ficha é pior que extrato nenhum, porque parece
+autoridade.
+
+O extrato **usa** o envelope de listagem (`data`/`total`/`page`/`limit`/
+`totalPages`), diferente da ficha financeira: ali há uma listagem de verdade.
+Ordenação por data e, em empate, por `id` — sem o segundo critério a paginação
+repetiria e pularia linhas.
+
+### A invariante da ficha e o contrato do resumo mudaram
+
+```
+contratado − pagoLiquidoAlocado − saldoAdiantado = emAberto
+```
+
+Os dois termos abatem o em aberto porque os dois são dinheiro no caixa da
+advogada; o que os separa é só ter ou não uma parcela apontada. Contar só o
+alocado faria um honorário integralmente adiantado aparecer como devendo tudo,
+no dia seguinte ao cliente ter pago.
+
+`emAberto` sai da FÓRMULA, e não de uma segunda soma sobre as parcelas — mesma
+razão pela qual `pendente` do resumo é `contratado − recebido` desde a 4.3. Pode
+dar **negativo**, e é honesto: um honorário que recebeu mais do que foi
+contratado tem crédito, e zerar no piso esconderia dinheiro da cliente.
+
+**DUAS mudanças de contrato em `GET /financeiro/resumo`:**
+
+1. **`pendente` passa a ser `contratado − recebido − saldoAdiantado`.** Sem o
+   terceiro termo ele divergiria da soma das fichas no primeiro adiantamento — a
+   mesma divergência que a Fase 4.3 existiu para fechar, e que
+   `tests/financial/resumo.test.js` trava somando as fichas de verdade.
+2. **`saldoAdiantado` é chave NOVA de primeiro nível.** São dez agora.
+
+**`recebidoNoMes` continua saindo de `Payment`** e passa a ser **líquido dos
+estornos do próprio pagamento**. Um pagamento de 1.000 em agosto, estornado em
+300, contribui com 700 — mesmo que o estorno seja de setembro: o abatimento
+segue o PAGAMENTO, que é a coisa datada de agosto. Contar o bruto faria a
+advogada fechar o mês com dinheiro que devolveu; datar o abatimento pelo estorno
+faria agosto mudar de valor conforme setembro, e um mês fechado não pode se
+mexer.
+
+**A ficha trocou `parcela.pagamentos` por `parcela.alocacoes`.** O nome mudou
+porque a coisa mudou: não são os pagamentos da parcela, são os pedaços de
+pagamento que encostaram nela — e um mesmo pagamento pode aparecer em duas.
+Cada alocação traz `pagamentoId`, que é o vínculo que a tela navega.
+
+**O recibo é do valor LÍQUIDO**, e some (404) quando o líquido zera. "Recebi de
+fulano a importância de X" precisa ser verdade no dia em que o papel é lido;
+imprimir o bruto daria ao cliente um comprovante de um valor que ele não pagou —
+justamente o documento que ele guardaria para provar o contrário. Um pagamento
+que cobre duas parcelas as nomeia ("parcelas 1 e 2 de 3").
+
+### DEC-040 — em aberto tem PISO ZERO; crédito é campo próprio (F-1a.1)
+
+**Substitui a decisão nº 4 da F-1a** ("`emAberto` pode ficar negativo, e é
+honesto"), preservando a preocupação dela — não esconder dinheiro da cliente —
+com execução correta.
+
+#### O caso que a derrubou, em números
+
+Smoke test manual de 17/08/2026, na main mergeada:
+
+| | |
+|---|---|
+| contratado do processo | **10.500** |
+| recebido | **7.500** |
+| em aberto EXIBIDO | **2.500** |
+| em aberto REAL | **3.000** |
+
+Um honorário com **−500** de crédito abatia a dívida de outro na soma do
+processo. O dinheiro fechava — nada sumia —, mas a leitura mentia, e mentia **a
+favor do cliente**, num módulo que imprime recibo assinado.
+
+#### A regra
+
+```
+emAberto (parcela)   = max(0, valor − valorPago)
+emAberto (honorário) = max(0, contratado − pagoLiquidoAlocado)
+emAberto (processo)  = Σ emAberto dos honorários NÃO CANCELADOS
+saldoAdiantado       = crédito, sempre NOMEADO, nunca somado nem subtraído
+```
+
+- **`saldoAdiantado` não entra em conta nenhuma.** Não é recebido (não quitou
+  obrigação) e não abate em aberto (é crédito, não pagamento). Ele existe no
+  model como sempre e passa a ser exibido ao lado, com nome.
+- **A soma do processo é Σ DAS LINHAS**, e não uma fórmula própria. Recalcular
+  por `contratado − pago` reintroduziria o defeito: a subtração global não
+  conhece a fronteira entre honorários. **Crédito é do honorário onde foi
+  gerado.**
+- **`contratado − pagoLiquidoAlocado − saldoAdiantado = emAberto` DEIXA DE SER
+  a invariante da ficha.** Era a fórmula que produzia o negativo.
+
+#### O que mudou junto, e por quê
+
+`renegotiationService.saldoEmAberto` usava a mesma fórmula antiga. Enquanto ela
+subtraía o crédito, o reparcelamento exigia um plano **menor** que a dívida — e
+logo depois a auto-alocação (DEC-036) consumia o crédito dentro desse plano
+menor, descontando **o mesmo dinheiro duas vezes**.
+
+Medido: honorário de 7.500 com 1.500 alocados e 500 de crédito. Pela fórmula
+antiga o plano novo somava 5.500, a auto-alocação punha os 500 nele, e as
+parcelas novas ficavam com 5.000 em aberto — enquanto o honorário dizia 5.500.
+Os dois níveis discordavam em exatamente o valor do crédito. Com a fórmula nova
+os dois dizem 5.500.
+
+`pendente` do resumo passou a somar **por honorário**, com piso, em vez de
+subtrair globalmente. Continua fechando com a soma das fichas — a igualdade que
+a Fase 4.3 existiu para garantir.
+
+#### O piso da PARCELA é alcançável, não é defesa em profundidade
+
+O motor nunca aloca mais do que a parcela comporta. Mas
+`PATCH /installments/:id { valor }` aceita **reduzir** o valor da parcela
+depois de ela ter recebido alocação, e `valorPago` é recalculado das alocações,
+não do valor da parcela. Sem o piso, a parcela exibiria "em aberto −R$ 500,00"
+e o número entraria em `aReceberNoMes` e `valorVencido`, abatendo outras
+parcelas. Há teste que percorre esse caminho pela API.
+
+**O excedente não some por causa do piso:** ele continua visível em
+`valorPago`, que fica maior que `valor` — e é ali que a advogada vê que recebeu
+mais do que cobrou.
+
+#### Uma premissa do roteiro desta fase que NÃO se confirmou
+
+O roteiro dizia que "`valorVencido` e o em aberto usam a mesma fórmula e
+carregam o mesmo defeito". **Carregam metade dele.** `aReceberNoMes` e
+`valorVencido` somam o em aberto de PARCELA, que nunca subtraiu
+`saldoAdiantado` — o defeito do crédito não passava por ali. O que passava era
+o negativo por `valor` reduzido, e é esse que o piso fecha. Corrigido e
+provado; a caracterização é que estava mais larga do que o defeito.
+
+#### O invariante 6 era CIRCULAR, e é por isso que ele passou verde
+
+Ele recomputava `contratado − pagoLiquidoAlocado − saldoAdiantado` a partir dos
+**mesmos campos** que a API devolvia, e comparava com o `emAberto` que a API
+calculara com a **mesma fórmula**. Uma tautologia: só falharia se o backend se
+contradissesse consigo mesmo, nunca se a fórmula estivesse errada.
+
+Reescrito com verificação independente — a expectativa sai dos dados **brutos**
+das parcelas (`valor` e `valorPago`, que não derivam da fórmula sob teste), e o
+que se afirma é a REGRA (nunca negativo; crédito fora da conta), não a
+aritmética. Casos novos: crédito + dívida no mesmo processo (o caso observado),
+crédito maior que o contratado, crédito em honorário cancelado, e parcela com
+valor reduzido abaixo do alocado.
+
+**A igualdade `emAberto do honorário = Σ emAberto das parcelas ativas` só é
+exigida onde ela vale**: quando o honorário está integralmente parcelado. Um
+honorário de 3.000 com uma parcela de 1.000 emitida deve 3.000 na ficha e 1.000
+pela soma das parcelas — decisão publicada desde a Fase 4.3, e a que vale é a
+da ficha. Exigi-la sempre transformaria uma decisão registrada em bug.
+
+---
+
+### DEC-041 — o recibo DESCREVE a alocação. **PROVISÓRIA** (F-1a.1)
+
+#### O caso que a originou
+
+Recibo emitido de um pagamento de **R$ 7.000,00** dizia:
+
+> referente a Honorários advocatícios — **parcela 2 de 2**
+> […] dando **plena e geral quitação** do valor acima em relação à obrigação a
+> que se refere.
+
+Quando só **R$ 1.500,00** foram para aquela parcela (que vale 3.000) e
+**R$ 5.500,00** viraram crédito. O documento é assinado pela advogada e
+entregue ao cliente: ele **quitava mais do que a obrigação a que se referia**, e
+é o papel que o cliente guardaria para provar isso.
+
+#### As duas regras
+
+1. **O recibo é DO PAGAMENTO.** Uma alocação não gera recibo próprio — um PIX é
+   um recibo, mesmo cobrindo três parcelas.
+2. **Ele DESCREVE a alocação.** Onde o dinheiro foi parar sai por extenso, e a
+   frase de quitação acompanha o que de fato foi quitado.
+
+| Caso | Referência |
+|---|---|
+| uma alocação que quita a parcela | `parcela N de M` — **texto preservado**, é o caso comum |
+| honorário não parcelado | `pagamento único` (sem "parcela 1 de 1", desde a F-1a) |
+| múltiplas alocações | `R$ X na parcela 1 de 2 e R$ Y na parcela 2 de 2` |
+| sobra em crédito | acrescenta `R$ Z mantidos como crédito para abatimento futuro` |
+| adiantamento sem parcelas | `adiantamento` — sem número de parcela |
+
+**Os valores só aparecem quando há mais de um destino ou sobra.** Enumerar
+valor onde há um destino só seria ruído; a partir de dois, o total do recibo
+deixa de descrever o que foi para a parcela citada — que é exatamente o defeito.
+
+#### A frase de quitação
+
+**Plena** só quando o pagamento não deixa nada pendente no que ele alcança: sem
+crédito sobrando **e** com todas as parcelas tocadas integralmente quitadas.
+
+> Para clareza e como prova, firmo o presente recibo, dando plena e geral
+> quitação do valor acima em relação à obrigação a que se refere.
+
+Em qualquer outro caso:
+
+> Para clareza e como prova, firmo o presente recibo, dando quitação do valor
+> acima efetivamente recebido. A quitação é PARCIAL e não alcança o saldo
+> remanescente da obrigação, que permanece devido.
+
+**A redação é PROVISÓRIA e aguarda ratificação da Laís**, como TIPOS_HONORARIO
+(DEC-039). É texto jurídico entregue a terceiro, e a escolha entre "quitação
+plena" e "quitação do valor recebido" tem efeito que não se decide por critério
+técnico.
+
+**O crédito do recibo sai da diferença** entre o líquido e o alocado, e não de
+`Fee.saldoAdiantado`: aquele campo é do honorário e pode ter contribuição de
+outros pagamentos, enquanto o recibo fala de UM. A conta fecha mesmo com
+estorno no meio, porque a desalocação consome o crédito antes das parcelas.
+
+As duas decisões vivem em funções **puras e exportadas** —
+`descreverDestino` e `frasePeDeQuitacao` —, testadas pelo texto extraído do PDF
+nos cinco casos.
+
+**Limitação conhecida da ferramenta de teste, registrada para não virar
+"correção" no documento:** `tests/helpers/pdfText.js`, o extrator escrito à mão
+na Fase 2E.2, embaralha MAIÚSCULAS em fonte com subconjunto — "PARCIAL" sai
+"PLRCILG" no texto extraído. O PDF está correto; quem abre o arquivo lê
+"PARCIAL". As asserções miram o trecho minúsculo da frase, e há comentário no
+teste dizendo por quê.
+
+---
+
+### DEC-042 — três estados de quitação, decididos pela OBRIGAÇÃO ALCANÇADA. **PROVISÓRIA** (F-1a.2)
+
+> **Convive com a DEC-041, que segue PROVISÓRIA.** A 041 decidiu que o recibo
+> *descreve a alocação*; a 042 decide *o que ele declara quitado*. As duas
+> aguardam ratificação da Laís, e **nenhum recibo vai a cliente real antes
+> disso**.
+
+#### O documento que a originou (achado A-1 da F-1a.2 — GRAVE)
+
+Recibo de **R$ 3.500,00** do seed — Agro Campos Gerais Ltda, honorário
+"Honorários complementares — recurso administrativo", cobrança de R$ 3.000,00
+em parcela única. O corpo dizia **certo**:
+
+> referente a Honorários complementares — recurso administrativo — **R$ 3.000,00
+> na parcela 1 de 1 e R$ 500,00 mantidos como crédito para abatimento futuro**
+
+E o pé dizia:
+
+> A quitação é **PARCIAL** e não alcança o **saldo remanescente da obrigação,
+> que permanece devido**.
+
+**Não havia saldo remanescente.** A parcela 1 de 1 valia R$ 3.000,00 e foi paga
+integralmente; a obrigação estava quitada e **ainda sobrou crédito**. O
+documento afirmava **dívida inexistente contra o cliente que pagou a mais** — e
+é papel assinado pela advogada, que trabalharia contra ela em qualquer discussão
+futura.
+
+**Escopo confirmado por contraprova.** O recibo de **R$ 800,00** (Custas
+administrativas, mesmo cliente, parcela única paga integral, sem sobra) dizia
+corretamente "plena e geral quitação". O ramo pleno funcionava; o defeito era a
+condição que tratava **sobra-em-crédito como quitação parcial**.
+
+**A condição culpada**, em `frasePeDeQuitacao` (`src/services/receiptService.js`):
+
+```js
+const plena =
+  destinos.length > 0 &&
+  creditoMantido <= 0 &&          // ← tratava SOBRA como se fosse FALTA
+  destinos.every((d) => d.quitaAParcela);
+```
+
+#### A regra: a pergunta certa
+
+Não é *"sobrou dinheiro?"*. É **"o que este pagamento alcançou ficou quitado?"**.
+Daí os três estados:
+
+| # | Estado | Quando | Redação |
+|---|---|---|---|
+| 1 | **Plena** | as parcelas alcançadas ficaram **integralmente quitadas** — vale **mesmo havendo crédito** | duas variantes, abaixo |
+| 2 | **Parcial** | alguma parcela alcançada continua com **saldo em aberto** | **inalterada** desde a DEC-041: está correta |
+| 3 | **Adiantamento** | **nenhuma alocação** | texto próprio: não quita obrigação nenhuma porque não há obrigação vencida a quitar |
+
+#### As redações, por extenso
+
+**Estado 1 — plena SEM crédito** (a da 4.1, intacta; é o recibo de R$ 800,00):
+
+> Para clareza e como prova, firmo o presente recibo, dando plena e geral
+> quitação do valor acima em relação à obrigação a que se refere.
+
+**Estado 1 — plena COM crédito** (é o recibo de R$ 3.500,00):
+
+> Para clareza e como prova, firmo o presente recibo, dando plena e geral
+> quitação do valor acima em relação às parcelas alcançadas por este pagamento,
+> que ficaram integralmente quitadas. Os R$ 500,00 restantes não correspondem a
+> obrigação em aberto: ficam registrados como crédito do contratante, para
+> abatimento futuro.
+
+**Estado 2 — parcial** (inalterada; é o recibo de R$ 4.500,00, o de R$ 1.500,00
+e o de R$ 4.000,00):
+
+> Para clareza e como prova, firmo o presente recibo, dando quitação do valor
+> acima efetivamente recebido. A quitação é PARCIAL e não alcança o saldo
+> remanescente da obrigação, que permanece devido.
+
+**Estado 3 — adiantamento sem obrigação alcançada:**
+
+> Para clareza e como prova, firmo o presente recibo, dando quitação do valor
+> acima efetivamente recebido. Este pagamento não alcançou parcela alguma: não
+> há obrigação vencida a quitar, e o valor recebido fica registrado como crédito
+> do contratante, para abatimento futuro.
+
+#### As regras de redação, que valem acima das frases
+
+1. A quitação se refere **ao valor efetivamente recebido**, sempre.
+2. Havendo crédito, o pé **nomeia o crédito** e diz que ele fica para abatimento
+   futuro — **nunca** o descreve como dívida do cliente.
+3. A palavra **"devido"** só aparece quando existe, de fato, **saldo em aberto
+   numa parcela alcançada**. Provado por teste, caso a caso, sobre o texto
+   extraído do PDF: `tests/financial/recibo.test.js`.
+
+#### O que impede a reintrodução
+
+O caso de R$ 3.500,00 está reproduzido com os mesmos números em
+`recibo.test.js`, teste 3 do bloco DEC-041/042, e a asserção central é a
+**ausência** da palavra "devido". O de R$ 800,00 está no teste 8, como
+regressão da redação plena — e ali a frase exata é conferida sobre a **função
+pura** `frasePeDeQuitacao`, porque o extrator de PDF embaralha acento e cedilha
+e não consegue provar uma vírgula.
+
+---
+
+### A-2 da F-1a.2 — o adiantamento nomeia a parcela onde o dinheiro entrou
+
+Recibo de **R$ 5.000,00** do seed (Maria Aparecida, adiantamento do inventário)
+dizia apenas **"pagamento único"**. O saldo **foi auto-alocado** (DEC-036)
+quando a parcela nasceu, mas o recibo não dizia em qual — quem recebe o papel
+não conseguia ligar o dinheiro à obrigação.
+
+**A correção.** Quando o pagamento tem alocações, o recibo as **descreve**,
+qualquer que seja o `tipo` do pagamento. **"Pagamento único" fica reservado ao
+caso de uma alocação que QUITA uma parcela única.** Adiantamento ainda **sem**
+alocação usa o texto do **estado 3** da DEC-042.
+
+O predicado de `descreverDestino` ganhou o terceiro caso que faltava:
+
+```js
+const enumerar =
+  destinos.length > 1 ||
+  (destinos.length > 0 && creditoMantido > 0) ||
+  destinos.some((d) => !d.quitaAParcela);   // ← o que faltava
+```
+
+O recibo passa a dizer **"R$ 5.000,00 na parcela 1 de 1"**. A regressão de
+"parcela 1 de 1 é ruído" (F-1a) continua valendo: ela só some no caso em que a
+alocação quita a parcela, que é quando "pagamento único" é verdade.
+
+---
+
+### A-3 da F-1a.2 — o recibo de pagamento estornado não pode ser silencioso
+
+Recibo de **R$ 2.500,00** do seed (Beatriz, usucapião) saía pelo líquido —
+correto — mas **em silêncio**: o pagamento foi de R$ 4.000,00 com estorno de
+R$ 1.500,00, e o documento não dizia nada disso. Para documento de prova é
+lacuna: o cliente ficava com um recibo de 2.500 e **nenhum registro** do que
+houve com a diferença.
+
+**A correção.** Havendo estorno ativo, o recibo declara o valor recebido, o
+valor estornado **com a data**, e que o valor acima é o **líquido**:
+
+> Este recibo é do valor líquido: do pagamento de R$ 4.000,00 foi estornado
+> R$ 1.500,00 em 18/05/2026, restando os R$ 2.500,00 acima.
+
+O número **em destaque continua sendo o líquido** — é o que a advogada recebeu
+de fato. O que se acrescenta é a conta que leva até ele.
+
+**O motivo do estorno NÃO entra no texto.** O campo pode estar vazio, e inventar
+motivo em documento assinado é pior que omiti-lo. Há asserção travando isso.
+
+A lista de estornos que entra na frase é o espelho de `totalEstornado`:
+anulação não é débito, e estorno anulado não conta — senão o recibo declararia
+um estorno que foi desfeito.
+
+---
+
+### A-3 e A-4 do smoke test — leitura, não conta (F-1a.1)
+
+**A-3 — parcela reparcelada exibia dívida fantasma.** Parcela `cancelado` com
+`reparcelamentoId` imprimia "em aberto R$ 2.250,00" na ficha. Ela **não entrava
+em soma nenhuma** — isso já valia. O problema era de leitura, e leitura é o que
+a ficha é.
+
+A ficha passa a enviar `reparcelamentoId` e `reparceladaEm` (a data da
+operação). A tela mostra rótulo **"Reparcelada"** — distinto de cancelamento
+avulso, porque uma cobrança cancelada foi desfeita e uma reparcelada foi
+SUBSTITUÍDA —, omite o "em aberto", atenua a linha e diz por qual operação ela
+saiu. **Valor e recebido ficam**: é histórico auditável, e omitir a parcela
+inteira levaria junto o registro de que aquela cobrança existiu.
+
+**A-4 — a busca perdia o foco.** Causa estrutural, confirmada por leitura antes
+da correção: `if (loading) return <Loading />` trocava a **árvore inteira** —
+inclusive o input — a cada refetch, e o React desmontava e remontava o campo.
+Não era `key`.
+
+Corrigido nas **cinco** listagens com filtro próprio (clientes, honorários,
+processos, pagamentos, parcelas), movendo o indicador para dentro do JSX,
+abaixo dos controles. `SecaoListPage` já nascia com o padrão certo e serviu de
+referência. As telas de DETALHE não têm o defeito: o `loading` delas é do
+carregamento inicial e não volta a `true`.
+
+**Não se corrigiu com `autoFocus` nem `.focus()` em efeito.** Os dois tratam o
+sintoma e criam um defeito pior — roubam o foco de quem navega por teclado, e
+num efeito disparado por refetch fazem isso a cada tecla.
+
+**Não há como provar foco sem DOM.** `tests/regressions/f1a1.test.js` trava a
+CAUSA por varredura estática (nenhuma listagem com filtro pode ter o `return`
+antecipado, e nenhuma pode usar as duas saídas fáceis), e o passo **155** do
+roteiro manual fecha a outra metade. Inventar um teste de foco frágil seria
+pior que o passo manual honesto.
+### A divisão F-1a / F-1b / F-1c
+
+**Decisão registrada:** o escopo original da Fase F-1 não cabia numa sessão e
+foi dividido em três. Não é adiamento — é o reconhecimento de que backend novo,
+seed novo, onze invariantes, telas ricas e roteiro manual numa entrega só
+produziriam ou uma sessão pela metade ou um merge sem prova.
+
+| Fase | Escopo |
+|---|---|
+| **F-1a** (esta) | backend completo, seed refeito, os 11 invariantes provados, frontend só o suficiente para o app funcionar |
+| **F-1b** | UX do dinheiro: preview de alocação na tela, estorno em modal, extrato com vínculos, paginador real |
+| **F-1c** | reparcelamento ponta a ponta na tela, navegação honorário↔parcelas, e a **seção 21 do roteiro manual** |
+
+**Nenhuma seção nova entrou no roteiro manual nesta fase, e é deliberado.** A
+seção 21 nasce na F-1c, quando as telas que ela descreveria existirem. Um passo
+de validação visual sobre uma tela que ainda não foi desenhada é passo que
+reprova por motivo errado — e a conta do roteiro (154 passos) fica parada de
+propósito, não por esquecimento.
+
+**O que a F-1a deixou PRONTO e sem tela**, para a F-1b não precisar de backend:
+`POST /payments/preview`, `GET /fees/:id/statement` com os vínculos completos,
+`GET /payments/:id/reversals` e `GET /financeiro/processos/:id/payments`. Os
+quatro estão testados e cobertos pela varredura de isolamento.
+
+
+### Fase F-0 — Ponto de restauração e faxina do backlog
+
+**Resumo:** a tag de restauração publicada no GitHub, e depois a limpeza dos
+achados P/M da Auditoria de Retomada — paginação, filtros, allowlist de upload,
+mensagens, logger de produção e segredos de teste. Backend 327 → **346**.
+Frontend 250 → **264**. Roteiro manual 147 → **154** passos.
+
+**Ponto de restauração (Parte 0, antes de qualquer edição):** tag anotada
+`v-pre-f0-2026-08-16` e branch `backup/pre-f0-main`, publicadas nos DOIS
+repositórios, apontando para `4f3e0ee` (back) e `0ef1ecb` (front). Restaurar:
+`git checkout v-pre-f0-2026-08-16`, ou `git reset --hard v-pre-f0-2026-08-16`
+na `main` — com a ressalva do limite permanente: reescrever histórico
+publicado é decisão explícita, não rotina.
+
+**Arquivos novos (backend):** `utils/logError.js`.
+**Arquivos novos (frontend):** `src/api/baseURL.js`, `.env.production.example`,
+`tests/regressions/f0.test.js`.
+
+**DUAS MUDANÇAS DE CONTRATO, as duas deliberadas:**
+
+1. **Id de filtro malformado responde 400 com `campo`**, nos quatro módulos.
+   Ver o bloco próprio abaixo.
+2. **`urlArquivo`, `tamanho` e `dataUpload` saíram da allowlist de PATCH de
+   `/documents`.** A decisão 16 diz que o upload está dormente; a allowlist o
+   mantinha aberto para escrita, e um documento **gerado** podia passar a
+   declarar que veio de arquivo enviado. Dormente passa a valer para escrita
+   também. `origem` fica, porque a validação já o recusa com mensagem própria.
+
+**Decisões**, com o porquê no código:
+
+- **O build de produção do frontend FALHA sem `VITE_API_URL`.** Era o achado
+  mais grave da auditoria: `npm run build` saía com sucesso embutindo
+  `http://localhost:3001/api`, e o deploy subia e falhava em toda requisição.
+  Nem `lint`, nem `build`, nem as duas suítes acusavam — não há erro no
+  código, o defeito é a ausência de uma variável. Por isso a guarda vive no
+  `vite.config.js`, e não num teste. `npm run dev` continua sem exigir nada.
+- **A URL base virou módulo único** (`api/baseURL.js`), consumido pelas duas
+  instâncias de axios. O fallback é guardado por `import.meta.env.DEV` na
+  forma LITERAL, que é a única que o Vite substitui por `false` — assim o ramo
+  vira código morto e o endereço de desenvolvimento **desaparece do bundle**.
+  A primeira versão lia a flag de um parâmetro, e o `grep` no `dist/` pegou o
+  literal sobrevivendo.
+- **`contarNaoVistas` foi MANTIDA e ligada**, não apagada: o dashboard
+  reescrevia a mesma consulta à mão e a função existia sem chamador.
+- **`bcryptjs` 3.x adiado** — major no caminho de autenticação dos dois
+  domínios. Ver o bloco de dependências.
+- **Log de 5xx em produção** sem biblioteca (`utils/logError.js`): carimbo,
+  método, **padrão** da rota, status e mensagem. Sem corpo, sem query, sem
+  cookie, sem `req.user` — a advogada é controladora de dado de terceiro, e
+  log sobrevive ao incidente, é copiado para triagem e raramente é apagado.
+- **Segredo de teste rotacionado.** `.env.test.example` trazia valores
+  literais e o `.env.test` em uso era cópia fiel deles, num repositório
+  **público**. Viraram placeholders; os segredos locais foram regerados.
+  Nenhuma credencial de banco esteve exposta — o `MONGO_URI_TEST` do exemplo
+  sempre foi placeholder.
+
+**Três premissas da auditoria que NÃO se confirmaram, corrigidas aqui:**
+
+1. **As `RATE_LIMIT_*` já estavam documentadas** no `.env.example`, comentadas
+   com os defaults (linhas 37-56). A varredura da auditoria contou só linhas
+   não comentadas. **Nada a fazer** — o item 6.8 já estava satisfeito.
+2. **Os segredos do `.env.test.example` não eram strings aleatórias
+   vazadas**, e sim placeholders descritivos
+   (`segredo-de-teste-nao-usar-em-producao`) que o `.env.test` local copiou
+   verbatim. O efeito prático é o mesmo — segredo de teste público — e a
+   correção também; a caracterização é que estava errada.
+3. **`escapeRegex` tinha QUATRO cópias, não três**: `feeService`,
+   `clientService`, `processService` e a `escaparRegex` privada de
+   `utils/texto.js`. Unificadas em `utils/texto.js`, junto com um
+   `regexTermoSimples` para os três campos de busca.
+
+**Um erro meu, pego pelo próprio teste que eu tinha acabado de escrever:** a
+varredura que proíbe a diretiva `eslint-env` no `public/sw.js` derrubou o
+comentário que EXPLICA a remoção, porque a explicação reproduzia a diretiva.
+É o trap que `css/foco.test.js` documenta desde a 4.5, e eu caí nele na fase
+seguinte. A varredura passou a procurar a forma de diretiva, e o comentário
+deixou de soletrá-la.
+
+**Não tocado:** `documentRenderService.js`, `letterheadService.js`, catálogo
+de variáveis, contrato das rotas do portal, envelope de `/auth`, model nenhum.
+**Nenhuma dependência nova** — só as duas versões da Parte 6.4.
+
+---
+
+### Semântica única do id de filtro inválido (Fase F-0)
+
+**MUDANÇA DE CONTRATO.** Antes, o mesmo parâmetro malformado tinha quatro
+comportamentos, medidos contra o seed:
+
+| Rota | Antes | Depois |
+|---|---|---|
+| `GET /documents?processoId=xyz` | 200, total **19** — a listagem INTEIRA | **400** `campo: "processoId"` |
+| `GET /fees?processoId=xyz` | 200, total **12** — idem | **400** |
+| `GET /installments?processoId=xyz` | 200, total **0** — lista vazia | **400** |
+| `GET /payments?processoId=xyz` | 200, total **0** — idem | **400** |
+
+Os dois primeiros são o pior caso: um id torto vindo de um link mostrava a base
+inteira no lugar do recorte pedido, sem nada na resposta dizendo que o filtro
+não foi aplicado. Os dois últimos mentiam ao contrário — "não há nada aqui".
+
+**Filtro AUSENTE continua sendo "sem filtro"**, e não 400: `?processoId=` vazio
+ou parâmetro nenhum é a listagem normal. A recusa é só para o que foi enviado e
+não serve.
+
+**Texto continua sendo descartado, e a assimetria é proposital.** `?busca=` ou
+`?tipo=` com valor estranho não vira 400: um id malformado significa que a tela
+montou uma URL errada; um texto estranho significa que alguém digitou algo
+estranho. A guarda mora em `filtroObjectIdExigido` / `filtroTexto`
+(`utils/filtrosDeConsulta.js`), agora aplicada aos **doze** filtros — a Fase
+4.5 tinha alcançado quatro.
+
+### Paginação nas listagens por processo (Fase F-0)
+
+`installmentService` e `paymentService` tinham um `return` antecipado sob
+`if (processoId)` que fazia **três** coisas erradas de uma vez:
+
+1. pulava `skip`/`limit` e devolvia o conjunto inteiro, com `limit: data.length`
+   — violando a regra central nº 4 (paginação obrigatória, teto 100);
+2. em `/payments`, ficava **antes** da linha que aplica `installmentId`, então
+   `?processoId=X&installmentId=Y` descartava o segundo filtro em silêncio.
+   Medido: `?installmentId=Y` devolvia 1 e os dois juntos devolviam **3** —
+   combinar dois filtros dava MAIS linhas;
+3. devolvia `{ data: [], total: 0, limit: 0, totalPages: 1 }` para id inválido.
+
+Os três saíram juntos, porque eram o mesmo atalho.
+
+**Consequência na tela, tratada na mesma fase.** `PaymentListPage` e
+`InstallmentListPage` renderizam o array inteiro, sem paginador — funcionavam
+por causa do defeito. Corrigido o backend, o default de 20 passaria a truncar em
+silêncio. As duas passaram a pedir o **teto de 100** explicitamente e a exibir
+"Mostrando N de M" quando o conjunto é maior. Paginador de verdade é da F-1,
+que reescreve estas telas; truncar sem avisar não podia sobreviver a esta.
+
+### Fase F-1a — Financeiro 2.0: backend completo, seed e os 11 invariantes
+
+**Resumo:** a branch da fundação (`2c639ee`) trazia os models, o motor de
+alocação e o service de estorno, mas `src/app.js` **não subia** — os
+consumidores antigos importavam símbolos que o modelo novo removeu. Esta fase
+os religou, refez o seed, provou os onze invariantes e tocou o frontend só o
+suficiente. Backend 346 → **395**. Frontend 264 → **289**.
+
+**Commits:** `8f41fbf` (backend + seed + invariantes), `f97a573` (adaptação da
+suíte), `00c608a` (frontend, no outro repositório).
+
+**Arquivos novos (backend):** `services/renegotiationService.js`,
+`services/statementService.js`, `controllers/reversalController.js`,
+`controllers/renegotiationController.js`, `controllers/statementController.js`,
+`validations/reversalValidation.js`, `validations/renegotiationValidation.js`,
+`tests/financial/financeiro2.test.js`.
+
+**Arquivos novos (frontend):** `pages/payments/allocationSummary.js`,
+`pages/payments/paymentRow.js`, `tests/financial/financeiro2.test.js`.
+
+**Decisões**, todas por extenso no bloco "Financeiro 2.0 — DEC-032 a DEC-039",
+acima: pagamento imutável; estorno como registro e não como campo; as duas
+rotas de reativação mortas; o motor de alocação com ordens opostas; o saldo
+adiantado para que nada se perca; reparcelamento com vínculo e soma exigida; o
+histórico de status com origem viajando pela cadeia; e o vocabulário de tipo de
+honorário em arquivo próprio, **provisório**.
+
+**Um desvio deliberado em relação à fundação**, com o motivo escrito no
+cabeçalho de `allocationService.js`: `adiantamento` deixou de curto-circuitar
+para o saldo e passa pelo MESMO planejamento de `comum`. A fundação tinha dois
+motores por tipo para a mesma pergunta, e o cabeçalho do próprio `Payment.js`
+já dizia que o tipo é do PEDIDO e não do resultado. Num honorário sem parcelas o
+resultado é idêntico ao de antes.
+
+**Dois defeitos meus, pegos pela própria suíte:**
+
+1. `paymentService.update` tinha deixado de chamar `validateUpdatePayment` ao
+   ser reescrito. A varredura estática de `tests/integrity/allowlist.test.js`,
+   escrita na Fase 4.5 justamente para travar o LUGAR da validação, caiu na
+   hora — é o teste provando o que foi escrito para provar.
+2. O recibo passou a escrever "parcela 1 de 1" num honorário não parcelado, ao
+   ganhar o caso de duas parcelas.
+
+**Uma premissa MINHA que não se sustentou**, corrigida no teste e não no
+código: o invariante 9 media a origem `reparcelamento` num cenário em que o
+status do honorário **não muda** (uma parcela `pago` sobrevive ao
+reparcelamento e o mantém `parcialmente_pago`). `registrarStatus` não grava
+linha para status igual, por desenho. Era o teste que estava errado.
+
+**Nenhum teste foi apagado.** Os que mediam comportamento revogado foram
+INVERTIDOS no lugar, no padrão que a Fase 4.1 usou com a DEC-028: o 409 de
+excedente virou o teste da alocação que o substituiu e da AUSÊNCIA da regra;
+`tests/integrity/reativacao.test.js` virou o teste dos 404 e das duas premissas
+estruturais que ele já protegia.
+
+**Não tocado:** `documentRenderService.js`, `letterheadService.js`, catálogo de
+variáveis, contrato das rotas do portal, envelope de `/auth`, vetores da
+fórmula percentual. **Nenhuma dependência nova** — `package.json` idêntico a
+`main` nos dois repositórios.
+
+**Roteiro manual: nenhuma seção nova** (ver "A divisão F-1a/b/c").
+
+### Fase F-1a.1 — correções do smoke test do Financeiro 2.0
+
+**Resumo:** quatro achados de um smoke test manual do Daniel na main mergeada
+da F-1a. Dois são de dinheiro e um sai impresso em recibo assinado — por isso
+vieram antes da F-1b, que construiria telas ricas sobre números errados.
+Backend 395 → **407**. Frontend 289 → **305**. Roteiro 154 → **157**.
+
+**Nada de UX nova**: preview de alocação, página do honorário, paginador e
+filtro por honorário continuam sendo F-1b.
+
+**Arquivos alterados (backend):** `services/financeiroService.js`,
+`services/dashboardService.js`, `services/renegotiationService.js`,
+`services/receiptService.js`, `tests/financial/financeiro2.test.js`,
+`tests/financial/invariantes.test.js`, `tests/financial/recibo.test.js`.
+
+**Arquivos novos (frontend):** `tests/regressions/f1a1.test.js`.
+**Alterados:** `components/financeiro/ProcessFinancialSheet.jsx` + `.css`,
+`utils/statusVisual.js`, e as cinco listagens com filtro
+(`ClientListPage`, `FeeListPage`, `ProcessListPage`, `PaymentListPage`,
+`InstallmentListPage`).
+
+**Decisões:** DEC-040 (piso zero + crédito nomeado, substituindo a decisão nº 4
+da F-1a) e DEC-041 (recibo por alocação, **provisória**), as duas por extenso
+acima, com o caso numérico observado — é o que impede a reintrodução.
+
+**Um defeito MEU da F-1a, corrigido aqui.** A decisão nº 4 daquela fase dizia
+que "`emAberto` pode ficar negativo, e é honesto". A preocupação estava certa —
+não esconder dinheiro da cliente — e a execução, errada: o negativo propagava
+para a soma do processo, e ali o crédito de um honorário abatia a dívida de
+outro. A correção mantém o dinheiro visível, em campo próprio e com nome.
+
+**Um teste meu que não testava.** O invariante 6 recomputava a mesma fórmula
+que a API usara e comparava consigo mesma. Passou verde durante toda a F-1a com
+o defeito presente. Reescrito com verificação independente.
+
+**Uma premissa do roteiro desta fase que não se confirmou:** `valorVencido` e
+`aReceberNoMes` carregavam METADE do defeito, não ele inteiro — somam o em
+aberto de PARCELA, que nunca subtraiu `saldoAdiantado`. Ver a nota na DEC-040.
+
+**Não tocado:** `documentRenderService.js`, `letterheadService.js`, timbrado,
+catálogo de variáveis, rotas do portal, vetores da fórmula percentual (hash
+travado), contrato de rota nenhum além dos dois campos novos da ficha.
+**Nenhuma dependência nova.**
+
+---
+
+---
+
+### DEC-043 — o preview de alocação é `POST /payments/preview`, e o plano tem UMA fonte (F-1b)
+
+#### A decisão
+
+A tela precisa mostrar, **antes de a advogada confirmar**, em quais parcelas o
+dinheiro vai encostar. A rota que responde isso é:
+
+```
+POST /api/payments/preview
+     { honorarioId, valor, tipo }  →  { destinos[], sobra,
+                                        saldoAdiantadoAtual, saldoAdiantadoDepois }
+```
+
+Ela **não grava nada** e já existia desde a F-1a, criada junto com o motor. A
+F-1b a manteve, ligou a tela nela e **travou a invariante que a sustenta**.
+
+#### Por que POST, e não `GET /payments/:id/allocation-preview`
+
+O roteiro desta fase sugeria a alternativa `GET /payments/:id/allocation-preview`.
+Ela não é implementável, e o motivo não é de estilo: **no momento do preview o
+pagamento não existe** — é justamente o que se está decidindo criar. Não há
+`:id` para pôr na URL. Um `GET` com `honorarioId`, `valor` e `tipo` na query
+funcionaria, mas:
+
+1. o corpo é o mesmo do `POST /payments`, e mantê-los idênticos é o que faz o
+   preview e a criação serem comparáveis — em query string, `valor` viraria
+   texto e ganharia uma conversão que a criação não tem;
+2. "o que aconteceria se eu registrasse este pagamento agora" é resposta
+   **volátil**: depende do estado das parcelas neste instante. `GET` é
+   cacheável por definição, e um preview servido do cache é um preview que
+   mente;
+3. a rota já estava publicada e testada como `POST` desde a F-1a. Trocar o
+   verbo agora seria churn de contrato sem ganho.
+
+#### A regra que não pode ser afrouxada: UMA fonte para o plano
+
+O preview e a criação usam **a mesma função**, `planejarAlocacao`
+(`services/allocationService.js`), que é pura e não toca o banco:
+
+| Caminho | Quem chama | Grava? |
+|---|---|---|
+| `POST /payments/preview` | `paymentService.preverAlocacao` | não |
+| `POST /payments` | `allocationService.alocarPagamento` | sim |
+| parcela nova nasce (DEC-036) | `allocationService.autoAlocarSaldo` | sim |
+
+**Se o preview divergir da criação, o preview mente** — e mentir aqui é pior
+que não ter preview, porque a advogada decide com base nele e só descobre
+depois de o dinheiro estar gravado. A garantia é estrutural (uma função só),
+mas garantia estrutural se perde num refactor distraído, então ela também é
+**medida pela ponta de fora**: `tests/financial/f1b.test.js`, bloco 1, manda a
+mesma entrada pelos dois caminhos e compara **parcela por parcela, na ordem**,
+mais a sobra. É a asserção mais importante da fase.
+
+A ordem entra na comparação de propósito: um preview que acertasse os valores
+na ordem errada diria que a parcela 3 será quitada antes da 2.
+
+**Corolário para a tela:** o frontend **formata** o plano e não o recalcula.
+`pages/payments/allocationPreview.js` não ordena, não soma e não decide o que
+cabe em cada parcela — há teste estático proibindo `sort`, `Math.min` e
+`Math.max` nesse arquivo. O mesmo formatador serve ao previsto e ao realizado
+(o 201 devolve a mesma forma), porque dois formatadores poderiam discordar
+sobre números que precisam bater.
+
+#### O que mudou de arquivo junto, e por quê
+
+A conta dos totais do honorário da **DEC-040** (`emAberto = max(0, contratado −
+pagoLiquidoAlocado)`, com o crédito à parte) vivia **dentro** de
+`montarFichaFinanceira`. A página do honorário da F-1b precisa dos mesmos
+quatro números, e o caminho barato seria repetir a fórmula.
+
+Ela saiu inteira para **`services/feeTotals.js`**, e a ficha passou a chamá-la.
+É o mesmo princípio do preview, um nível acima: **uma pergunta sobre dinheiro,
+uma fórmula**. `tests/financial/f1b.test.js`, bloco 3, compara os totais de
+`GET /fees/:id` com os da ficha, chave por chave — mover fórmula de dinheiro
+exige uma asserção dizendo que as duas leituras continuam concordando.
+
+#### `GET /fees/:id` ficou mais gordo, e é aditivo
+
+Passou a devolver, ao lado dos campos de sempre: `cliente` (o principal do
+processo, com o nome já resolvido por tipo de pessoa), `totais`, `parcelas` (com
+`emAberto` com piso e o vínculo do reparcelamento) e `contagemParcelas`.
+
+As parcelas vêm **aqui** e não de `GET /installments?feeId=` porque esse filtro
+não existe, e criá-lo é trabalho de **listagem** — escopo declarado da F-1b.2.
+As parcelas de um honorário não são uma listagem: são o próprio honorário visto
+por baixo, como a ficha já as aninha, e não paginam pela mesma razão (meia lista
+faria os totais do cabeçalho não fecharem com as linhas embaixo).
+
+---
+
+### A divisão F-1b / F-1b.2 / F-1c — e por que ela existe
+
+A F-1 original **morreu por escopo grande demais numa sessão**. O recorte
+abaixo é deliberado, e cada fase termina com suíte verde e merge.
+
+**F-1b (esta) — a UX do dinheiro.** A página do honorário
+(`/dashboard/honorarios/:id`), o extrato na linha do tempo com os vínculos, o
+preview de alocação, o estorno e a anulação em modal, e o nome do honorário
+virando link em toda tela onde ele aparece.
+
+**F-1b.2 — as listagens.** *(Escrito durante a F-1b. Só parte disto virou a
+F-1b.2; ver a **DEC-044** e "O que fica para a F-1b.3" no fim deste arquivo.)*
+Paginador real, filtro por honorário, barra de busca em pagamentos, filtro por
+período nas três listagens financeiras, badge "estornado integralmente" na
+coluna do valor, coluna de honorário legível, e **moeda que nunca trunca**.
+
+**O que a F-1b.2 de fato fez:** o badge, a coluna de honorário legível e a
+moeda que nunca trunca — mais o que este texto não previa, e que a execução do
+roteiro em 18/08/2026 revelou: a **DEC-044** (o extrato se lê sem somar errado)
+e a **responsividade** das cinco telas da fase. **Os filtros e o paginador
+foram para a F-1b.3.**
+
+**F-1b.3 — achar o lançamento (19/08/2026, feita).** Os filtros e o paginador
+que sobraram, mais duas coisas que a execução do roteiro em 19/08 revelou: a
+**DEC-045** (a referência do pagamento é valor e forma, não o sufixo do id — o
+passo 166) e o **menu de três pontos** (a coluna Ações da listagem de
+pagamentos cortava o terceiro botão — o passo 168). Ver a seção própria no fim
+deste arquivo.
+
+**F-1c — o reparcelamento ponta a ponta.** O backend já reparcela (DEC-037); o
+botão existe na página do honorário **desabilitado, dizendo que chega na F-1c**.
+Junto vai a leitura do "parcela 1 de N" pós-reparcelamento (a observação do
+passo 156, item 6, endereçada à Laís) e a seção do roteiro que valida o módulo
+financeiro inteiro.
+
+---
+
+### DEC-044 — toda linha do extrato que deixou de valer DIZ que deixou de valer (F-1b.2)
+
+#### O defeito, com o caso real
+
+Estornar R$ 1.000,00 de um pagamento de R$ 4.500,00 e depois **anular** o
+estorno deixa o extrato do honorário assim:
+
+```
+Alocação   R$ 3.000,00   ← viva
+Alocação   R$ 1.500,00   ← desfeita pelo estorno (nada dizia isso)
+Alocação   R$   500,00   ← substituta: o resto da de 1.500 (nada dizia isso)
+Alocação   R$ 1.000,00   ← nasceu da anulação
+           ───────────
+           R$ 6.000,00   para um pagamento de R$ 4.500,00
+```
+
+**A conta do sistema está certa.** A alocação de 1.500 tem `estornoId`
+preenchido, não entra em `pagoLiquidoAlocado`, e `totais.pago` responde 4.500.
+Há uma desalocação de 1.500 compensando na lista. O que estava errado é a
+**leitura**: quem lê de cima a baixo soma 6.000 e não tem como saber que uma
+das linhas foi desfeita.
+
+A assimetria era o ponto. O **estorno anulado** já recebia o tratamento certo
+desde a F-1b (`anulado: true`, e a tela escreve "este estorno foi anulado
+depois"). A **alocação desfeita** não recebia nenhum: o contrato expunha
+`ativa: false` — um booleano que diz **que** ela caiu e não diz **quando** nem
+**por quê** —, e com isso a tela não tinha como escrever a frase sem inventar
+ou sem abrir uma segunda leitura por linha.
+
+#### A regra
+
+> **Nenhuma linha do extrato pode ser somada por quem lê e dar um total que o
+> sistema não reconhece. Se uma linha não vale mais, ela diz isso.**
+
+#### O que mudou no contrato
+
+Nenhum campo novo é **conta nova**. Todos são vínculos que já existiam nos
+registros e que o extrato não estava expondo.
+
+Na linha de **alocação**:
+
+| Campo | O que responde |
+|---|---|
+| `desfeitaEm` | *quando* (é `Allocation.desalocadoEm`, a data do estorno) |
+| `estornoQueDesfezId` | *por qual estorno* |
+| `valorEstornoQueDesfez` | o valor dele, para a frase da tela |
+| `substituiAlocacaoId` | de qual alocação esta é o **resto** |
+| `estornoQueGerouId` | qual estorno a produziu |
+| `valorEstornoQueGerou` | o valor dele |
+| `dataPagamento` | a data **real** do pagamento (ver abaixo) |
+
+Na linha de **desalocação**: `estornoAnulado` — se o estorno que a causou foi
+anulado depois, o dinheiro que ela tirou já voltou, e sem a ressalva quem lê
+subtrai duas vezes. Simetria com o `anulado` da linha do estorno.
+
+#### `Allocation` ganhou dois campos, e por que não dava para derivá-los
+
+`substituiAlocacaoId` e `estornoOrigemId`, gravados **uma vez, na criação**,
+em `allocationService.desalocarPorEstorno`.
+
+A substituta nascia indistinguível de uma alocação original: mesmo
+`pagamentoId`, mesma `parcelaId` e — porque ela **herda `data` da original** —
+a mesma data do pagamento. No extrato ela aparecia no meio das originais
+daquele dia, e o bloco do dia passava a alocar mais do que o pagamento tinha.
+
+Derivar por heurística (mesma parcela, mesmo pagamento, `createdAt` posterior)
+seria adivinhação: duas alocações legítimas na mesma parcela **existem** quando
+uma anulação realoca. Por isso o vínculo é gravado, como todo vínculo deste
+modelo. São campos opcionais com `default: null` — registro antigo continua
+válido e simplesmente não se declara substituto.
+
+#### `dataPagamento` corrigiu uma AFIRMAÇÃO ERRADA
+
+A alocação criada pela **anulação** grava `data: anulacao.data`. A frase da tela
+("Do pagamento de {data}") usava a data do evento: no caso acima ela dizia "Do
+pagamento de 18/08/2026" para um pagamento de **08/05/2026** — uma data em que
+pagamento nenhum aconteceu. O extrato passa a expor a data real do pagamento ao
+lado do `pagamentoId`, nas linhas de alocação **e** de desalocação.
+
+#### A ordem cronológica é DECISÃO consciente
+
+O extrato lista **do mais antigo para o mais novo**, contrário ao que o prompt
+da F-1b pediu. **Fica assim, e por escrito:** extrato conta uma história, e
+história se lê do começo. É também o que torna verificável a regra acima —
+somar as alocações vivas de cima para baixo e bater com o pagamento.
+
+Detalhe que o teste fixa: a criação do honorário **não** é necessariamente a
+primeira linha. `historicoStatus` é carimbado com o instante real da criação
+(DEC-038), e um pagamento com `data` retroativa — o caso normal, lançar em
+agosto o PIX que caiu em maio — o antecede. Ordenar por instante de gravação
+contaria a história na ordem em que foi digitada, não na em que aconteceu.
+
+#### Custo
+
+Nenhum. O extrato já carregava estornos e pagamentos em memória (`estornoPorId`,
+`pagamentoPorId`) para resolver os outros vínculos; os campos novos são leitura
+desses mapas. Continuam sendo seis consultas por chamada, todas por índice e
+escopadas a um honorário.
+
+#### Testes
+
+`tests/financial/f1b2.test.js`, 13 testes em 6 blocos. O que dá nome à fase:
+
+```
+soma das alocações exibidas  = R$ 6.000,00   ← o defeito
+soma das alocações VIVAS     = R$ 4.500,00   ← o pagamento
+totais.pago                  = R$ 4.500,00   ← e a ficha concorda (DEC-040)
+```
+
+Mais: toda desfeita tem marca, alocação viva não tem marca disfarçada de `null`,
+a substituta aponta a alocação certa, dois pagamentos no mesmo dia têm sufixos
+de 6 caracteres distintos, e os totais da DEC-040 não mudaram.
+
+---
+
+## Fase F-1b.3 — os filtros que faltavam (19/08/2026)
+
+**A pergunta da fase:** achar um lançamento sem precisar lembrar de qual
+honorário ele é. No backend, isso são três filtros novos nas três listagens
+financeiras, no padrão da F-0 (id inválido → **400 com `campo`**, guardas de
+tipo, filtros compostos em **AND**, filtro ausente não filtra).
+
+### O que cada rota ganhou
+
+| Rota | Filtros novos | Recorte do período |
+|---|---|---|
+| `GET /api/payments` | `busca`, `de`/`ate` (`honorarioId` já existia desde a F-1a) | `data` — a data do pagamento |
+| `GET /api/installments` | `honorarioId`, `busca`, `de`/`ate` | `dataVencimento` |
+| `GET /api/fees` | `de`/`ate`; `busca` **alargou** | `dataVencimento` |
+
+**`?honorarioId=` em `/installments` é o `feeId` do schema, com o nome que a
+tela usa.** Dois nomes para o mesmo recorte, um por rota, obrigaria a tela a
+lembrar qual é qual — e o `campo` do 400 nomeia o **parâmetro**, não a coluna,
+porque é o parâmetro que a tela precisa para saber qual controle montou a URL
+errada.
+
+Isso fecha a dívida anotada em `feeService.getFeeById` na F-1b ("esse filtro
+não existe, e criá-lo é trabalho de listagem"). A página do honorário **continua
+aninhando** as parcelas, pelo motivo que aquele comentário dá: os totais do
+cabeçalho têm de fechar com as linhas embaixo, e meia lista quebraria isso.
+
+### `?busca=` — três alvos, e o que ficou de fora
+
+`services/buscaFinanceira.js`. Casa a **descrição do honorário**, o **número do
+processo** e — só onde o campo existe — as **observações**.
+
+**Por que projeção, e não `$lookup`.** Descrição e número vivem em outras
+coleções, e `Payment` guarda delas só o id. Três saídas:
+
+1. agregação com `$lookup` — join com varredura por página, sem índice
+   utilizável para o regex;
+2. campo sombra desnormalizado — rápido de ler, caro de manter: toda edição de
+   descrição teria de reescrever os pagamentos, e o dia em que uma falhar a
+   busca mente;
+3. **duas consultas de projeção (`_id` apenas)** sobre coleções pequenas —
+   honorários e processos são dezenas por usuária —, e o filtro principal vira
+   `$in` sobre índice.
+
+Escolhida a 3. **Alcance reduzido e declarado:** `observacoes` só existe em
+`Payment`; em parcelas e honorários a busca casa descrição e número, e nada
+mais. Um teste fixa isso nos dois sentidos, para o alcance não crescer por
+acidente nem encolher em silêncio.
+
+`regexTermoSimples`/`escaparRegex` (unificados na F-0) continuam sendo a única
+porta: `?busca=.*` devolve **0**, não a base inteira.
+
+### `?de=`/`?ate=` — e a divergência de fuso, declarada
+
+`utils/filtrosDeConsulta.js`: `filtroDataExigida` e `filtroPeriodo`.
+
+O enunciado da fase pediu "interpretação em fuso local, o mesmo tratamento que o
+resumo do dashboard já usa para `mesReferencia`". **Medido no código, o resumo
+faz o contrário do que o enunciado supõe:** ele recorta em **UTC**
+(`Date.UTC(ano, mes, 1)`), e o comentário de lá diz por quê — `dataVencimento` e
+`dataPagamento` são datas SEM hora, chegam como `"2026-08-31"`, o Mongoose as
+grava em meia-noite UTC e o frontend as renderiza com `timeZone: "UTC"`.
+
+**Adotado UTC**, que é o que o dashboard de fato faz. Recortar em fuso local
+devolveria, num servidor a oeste de Greenwich, uma parcela de 01/09 dentro de
+`ate=2026-08-31` — porque 01/09T00:00Z é 31/08 às 21h em Brasília. A data é
+gravada, exibida e agora filtrada no mesmo fuso; é essa coerência, e não o fuso
+em si, que faz o filtro devolver o que a linha da tabela mostra.
+
+Regras:
+
+- bordas **inclusivas**: `de` → 00:00:00.000Z, `ate` → 23:59:59.999Z do mesmo
+  dia. Um `ate` em meia-noite excluiria o dia inteiro que a pessoa digitou;
+- um sem o outro é período aberto de um lado;
+- data fora do formato `AAAA-MM-DD` → 400 com `campo`;
+- **data que não existe** (`2026-02-31`) → 400. `Date.UTC` a normalizaria para
+  03/03 em silêncio; a volta pelo `getUTC*` recusa em vez de deslizar;
+- `de` > `ate` → 400 que **explica** ("inverta as duas datas"), e não lista
+  vazia: uma lista vazia para um período impossível é indistinguível de "não há
+  lançamentos nesse período", e faria procurar o lançamento em vez de olhar as
+  duas datas.
+
+### DEC-045 — a referência do pagamento é o que o humano reconhece
+
+**O defeito, com o caso real (passo 166 do roteiro).** Dois pagamentos do mesmo
+dia saíram referenciados no extrato como **#e66b7a** e **#e66b7c** — diferem no
+**último** caractere. A suíte provava que não colidiam, e ninguém casava as
+linhas de relance.
+
+**A causa é estrutural, não azar:** os seis últimos hex de um ObjectId são o
+**contador**, que incrementa de 1 em 1. Pagamentos criados em sequência
+**sempre** colidem no prefixo desses seis — que é por onde o olho lê. O próprio
+passo previu a revisão: "se os seis caracteres não servirem para casar as
+linhas, eles são ruído".
+
+**A decisão.** O vínculo passa a nomear o pagamento por **valor** e **forma**,
+além da data. O sufixo do id permanece como **desempate** do caso degenerado
+(dois pagamentos idênticos em valor, forma e data), mas deixa de ser a
+referência principal.
+
+**No backend, isso é uma linha de contrato:** as entradas `alocacao` e
+`desalocacao` do extrato passaram a carregar `valorPagamento` e
+`formaPagamento`, ao lado do `dataPagamento` que a DEC-044 já tinha posto.
+Ambos vêm **`null`** quando não há pagamento por trás (alocação de saldo
+adiantado) — a tela escreve "de saldo adiantado" nesse caso, e um valor
+inventado ali afirmaria um pagamento que não aconteceu.
+
+Quem monta a frase é o frontend (`components/financeiro/statementEntry.js`),
+função pura, testada como função pura. O backend não escreve frase.
+
+### `totalPages` de conjunto vazio continua **0**
+
+Comportamento da F-0, preservado de propósito nas quatro rotas: `Math.ceil(0 /
+limit)` é 0. Quem normaliza para 1 é o frontend (`paginacao.js`), porque
+"página 1 de 0" não é uma posição em que alguém possa estar — mas isso é
+decisão de **exibição**. Mudar o envelope mexeria em quatro rotas e em todo
+teste que lê `totalPages`, para resolver um problema que não é do contrato.
+
+---
+
+---
+
+## DEC-046 — o menu de ações é renderizado em portal (F-1b.3.1, só frontend)
+
+**O backend não foi tocado nesta fase.** A decisão fica registrada aqui porque
+o log de DEC é **compartilhado** e numerado em série pelos dois repos: quem
+procurar "DEC-046" a partir daqui precisa achar, e não concluir que o número
+foi pulado. A implementação e o detalhe estão no **CLAUDE.md do frontend**.
+
+**O defeito.** O painel do menu de três pontos das listagens financeiras
+(Pagamentos, Parcelas, Honorários) **saía da tela, cortado**. O botão recebia
+foco e abria o painel — o comportamento estava certo, o posicionamento não.
+
+**A causa.** O painel era `position: absolute` e **todo ancestral com
+`overflow` diferente de `visible` recorta descendente posicionado**. Havia
+três, aninhados: a própria célula (`.data-table--fixed td`,
+`overflow: hidden`), o wrapper de rolagem da tabela (`.table-wrapper`,
+`overflow-x: auto` — e um eixo `auto` faz o outro computar `auto` junto) e o
+`.main-content` (`overflow-y: auto`). **Recorte não é ordem de pintura:**
+nenhum `z-index` atravessa isso.
+
+**A solução.** `createPortal` no `document.body` + `position: fixed` +
+coordenadas do gatilho por `getBoundingClientRect()`, com virada **horizontal**
+(360 px) e **vertical** (última linha), coordenada nunca fora do viewport, e
+**fechar ao rolar** (`scroll` em captura, porque `scroll` não borbulha) e ao
+redimensionar. Zero dependência nova — `react-dom` já estava lá.
+
+**A consequência de projeto.** Qualquer flutuante futuro dentro de tabela
+rolável — tooltip, popover, seletor de data — tem o mesmo problema e a mesma
+solução.
+
+**Suítes na F-1b.3.1:** frontend **479** testes (31 novos em
+`tests/regressions/f1b31.test.js`), backend **469**, os dois com zero skip e
+zero todo. O backend continuou verde **sem ser alterado**, que era exatamente o
+que a fase precisava provar.
+
+---
+
+## Emenda à DEC-046 e DEC-047 (F-1b.3.2, só frontend)
+
+**O backend não foi tocado nesta fase.** Os dois registros ficam aqui porque o
+log de decisões é **compartilhado e numerado em série** pelos dois repos: quem
+procurar "DEC-047" a partir daqui precisa achar. A implementação está no
+CLAUDE.md do frontend.
+
+### Emenda à DEC-046 — o portal custa a ordem de tabulação
+
+A DEC-046 pôs o painel do menu em `createPortal` no `body` para escapar do
+`overflow` que o recortava. A validação manual (passo 178) achou o preço: **o
+painel deixou de ser acessível por Tab, só por mouse**.
+
+`createPortal` propaga **eventos** pela árvore do React, mas a **ordem de
+tabulação é a do DOM real** — e no DOM real o painel é o último filho do
+`body`, enquanto o gatilho está numa célula no meio da tabela. **Tirar o painel
+do contêiner que recortava tirou junto a ordem de foco natural.**
+
+O foco passou a ser **conduzido**: entra no primeiro item ao abrir (depois de a
+posição estar calculada), circula dentro do painel com Tab e Shift+Tab, e volta
+ao gatilho no Esc — que, com o Tab preso, é o único caminho de volta.
+
+**Quem usar portal de novo herda este custo junto com a solução.**
+
+### DEC-047 — a coluna de ações de toda listagem é o menu ⋮
+
+O ⋮ existia só no Financeiro; Clientes, Processos, Documentos e Seções ainda
+tinham a fileira de botões. A razão de padronizar não é estética: **a advogada
+aprendia um gesto numa tela e ele não valia nas outras**.
+
+Ação vai para dentro do menu; **explicação fica fora, na célula**; Excluir
+sempre em vermelho e por último; **o componente é o mesmo, sem cópia**. Sete
+listagens ao todo.
+
+**Suítes na F-1b.3.2:** frontend **501** testes (22 novos em
+`tests/regressions/f1b32.test.js`), backend **469**, os dois com zero skip e
+zero todo. O backend continuou verde **sem ser alterado**.
+
+---
+
+## O ambiente de testes e o de desenvolvimento são REMOTOS (registrado na F-1b.3.2)
+
+Dois fatos de infraestrutura que não estavam escritos em lugar nenhum e
+custaram tempo numa sessão:
+
+### `.env.test` aponta para Atlas, não para Mongo local
+
+A suíte **não** precisa de `mongod` local — `.env.test` usa `mongodb+srv` e o
+banco de teste é o **`lex_test` remoto**. A guarda que impede rodar sobre `lex`
+continua valendo e não foi tocada.
+
+**A consequência prática:** **duas sessões rodando a suíte ao mesmo tempo se
+atropelam**, porque compartilham o mesmo `lex_test` remoto. Antes de rodar
+`npm test` em paralelo com outra pessoa (ou com outro agente), combine — não há
+isolamento por sessão.
+
+**Como o atropelo APARECE** (medido na F-1c.1, duas vezes na mesma sessão): a
+suíte quebra em dezenas de testes com **`401 — "Usuário do token não
+encontrado"`**, e às vezes com **409 de duplicidade** em campos que o teste nem
+tocou. A causa é o `limparColecoes` da outra execução apagando os usuários no
+meio desta. **Não é regressão do código** — é a segunda suíte. O sintoma engana
+porque as falhas caem em arquivos sem relação com o que se acabou de mexer
+(numa das vezes, 43 falhas todas em `tests/documents/`).
+
+Antes de investigar uma quebra assim, **confira que não há outra suíte
+rodando**: `pgrep -f "node --test"`.
+
+### `npm run seed:fresh` reseta um banco REMOTO e compartilhado
+
+`reset:dev` + `seed:demo` rodam contra o banco de **desenvolvimento**, que é
+**Atlas remoto** (`…/lex`), não um Mongo da máquina. **Só o banco de teste tem
+guarda**; o de desenvolvimento não tem nenhuma.
+
+É o comando documentado e é a pré-condição de quase todo passo do roteiro — mas
+quem o roda está apagando o banco de desenvolvimento **de todo mundo**.
+**Candidato a confirmação obrigatória quando o alvo não for local**, na linha
+da guarda que o banco de teste já tem.
+
+---
+
+## DEC-048 — "Parcela 1 de 3": o número da parcela depois do reparcelamento (F-1c.1)
+
+### O defeito
+
+O reparcelamento (DEC-037) cancelava as parcelas em aberto e criava as novas
+**continuando a numeração**. Um honorário de 2 parcelas que virava 3 ficava
+com **1, 2** (canceladas) e **3, 4, 5** (vivas).
+
+Para quem lê, **"parcela 3" de um plano de três é a PRIMEIRA**. A advogada, ao
+telefone com o cliente, precisa dizer "são três parcelas, esta é a primeira" —
+e a tela dizia 3.
+
+### A decisão
+
+1. **As parcelas novas renumeram a partir de 1.** O plano vigente é 1, 2, 3.
+2. **As canceladas mantêm o número que tinham**, congelado, com "Reparcelada"
+   ao lado. A história não é reescrita.
+3. **O "de N" é congelado.** N é o tamanho do plano ao qual aquela parcela
+   pertence — nunca recalculado. Uma parcela cancelada de um plano de 2
+   continua dizendo "de 2", para sempre.
+
+### Por que o campo é GRAVADO e não contado na leitura
+
+Contar as parcelas do honorário no momento da leitura devolveria o total **de
+todas as gerações somadas**. O número mudaria a cada reparcelamento, inclusive
+nas parcelas antigas — e **um recibo emitido em maio passaria a dizer outra
+coisa em setembro**.
+
+**Recibo que muda de significado depois de entregue ao cliente é o defeito mais
+grave que este projeto já corrigiu.** Congelado no nascimento é a única forma
+que não reescreve o passado.
+
+Foi exatamente esse o bug encontrado em `receiptService`: `totalDeParcelas` era
+`countDocuments({feeId, ativo: true})`, a contagem de todas as gerações. O
+recibo passou a usar o `totalParcelas` **da própria parcela**.
+
+### Os dois campos, e a diferença que mais confunde
+
+| Campo | Significa | Preenchido em |
+|---|---|---|
+| `reparcelamentoId` | a operação que me **CANCELOU** | só nas canceladas |
+| `planoId` | a operação que me **CRIOU** | só da 2ª geração em diante (`null` = plano original) |
+
+Uma parcela cancelada da 2ª geração tem os **dois** preenchidos, com valores
+**diferentes**: nasceu no reparcelamento A e morreu no B. Um campo só não
+conseguiria dizer isso — e foi por supor que `reparcelamentoId` queria dizer
+"nasceu em" que a migração desta fase quase contou o conjunto errado.
+
+`totalParcelas` é o "de N" congelado. É `null` **enquanto o plano está aberto**:
+a advogada cria parcela por parcela (não há criação em lote), e quando a
+primeira nasce ninguém sabe que serão três. Passa a ter valor, e aí nunca mais
+muda, nos dois instantes em que o plano deixa de ser editável: quando o
+reparcelamento **cria** as novas (M é conhecido) e quando **cancela** as
+antigas (congela o N que elas tinham).
+
+Enquanto é `null`, o rótulo conta o **plano vigente** na leitura — que é a
+resposta verdadeira enquanto ele cresce. Os dois campos **não podem ser
+enviados por rota**: `installmentService` recusa com 400, pela mesma razão do
+`valorPago`.
+
+### O índice único teve de mudar — era ele que impedia a decisão
+
+Era `{feeId, numeroParcela}`, **único e não parcial**. Com ele, um honorário
+não podia ter duas parcelas nº 1 — e o próprio `renegotiationService` dizia:
+*"Recomeçar em 1 colidiria na primeira."*
+
+Passou a ser **`{feeId, planoId, numeroParcela}`**: a unicidade vale **dentro
+do plano**.
+
+**A premissa da Fase 4.5 continua valendo**, e era o que este índice não podia
+quebrar: ele segue **sem `partialFilterExpression`**, então a parcela
+**desativada** (`ativo: false`) nunca solta o número dela — não existe segunda
+parcela para colidir numa reativação. Um índice parcial em `ativo: true` teria
+resolvido a DEC-048 e reaberto aquele buraco.
+
+A checagem de duplicidade do serviço também passou a ser **por plano**: conferir
+pelo honorário inteiro recusaria com 409 a criação de uma parcela válida no
+plano vigente.
+
+### O problema que a decisão cria, e como ele se resolve
+
+Renumerar faz existirem **duas parcelas nº 1** no mesmo honorário: uma
+cancelada e uma viva. Referenciar por ordinal passa a ser ambíguo — **é
+exatamente o defeito que a DEC-045 resolveu para pagamentos.**
+
+A solução é a mesma: **referência por atributo humano, não por ordinal.**
+
+- viva: **"parcela 1 de 3, vencendo 15/09/2026"**
+- cancelada: **"parcela 1 de 2, vencendo 10/05/2026 (reparcelada)"**
+
+O **vencimento** distingue — duas parcelas nº 1 do mesmo honorário nunca vencem
+no mesmo dia, porque a nova nasce de um plano futuro. O **"(reparcelada)"**
+avisa que aquela linha pertence a uma história encerrada.
+
+**Se a advogada precisar do id para saber de qual parcela a frase fala, a
+DEC-048 falhou mesmo com a suíte verde.**
+
+A frase sai de função pura, em `services/installmentReference.js` (backend) e
+`components/financeiro/installmentLabel.js` (frontend) — as duas pontas montam
+texto, e o que não pode haver é uma **terceira** cópia dentro de um componente.
+
+**A referência do PAGAMENTO (DEC-045) não muda.** São duas referências
+diferentes e elas convivem na mesma frase: *"Do pagamento de R$ 300,00 em
+dinheiro (10/06/2026, #698600), aplicado na parcela 1 de 3, vencendo
+15/09/2026."*
+
+### A migração NÃO renumerou o passado
+
+`scripts/migrarTotalParcelas.js` preencheu `planoId` e `totalParcelas` nas
+parcelas já gravadas, e trocou o índice. **Não renumerou nada** — renumerar
+dado gravado quebraria a referência de recibos já emitidos.
+
+Um honorário reparcelado **antes** da F-1c.1 continua com 1, 2 (canceladas) e
+3, 4, 5 (vivas), só que agora dizendo "de 2" e "de 3" corretamente. **A
+renumeração vale só para reparcelamentos daqui em diante.**
+
+O script é **idempotente** e derruba o índice velho explicitamente: o Mongoose
+cria o novo na subida mas **não remove o antigo**, e sem essa parte o
+reparcelamento continuaria falhando em produção com a suíte verde.
+
+### Onde o rótulo aparece
+
+Página do honorário, listagem de Parcelas, extrato, recibo, ficha do processo e
+o cartão de próximos vencimentos do dashboard.
+
+**O portal do cliente não entra** — e não por esquecimento: a **DEC-029 ponto
+8** mantém o portal **sem nada financeiro**, com teste travando
+(`tests/portal/isolamento.test.js`). Não há parcela para rotular lá, e se
+aparecer número de parcela no portal **isso é o defeito**, não a melhoria.
+
+A listagem de Parcelas atravessa honorários, então o "de N" efetivo dela vem
+**calculado do backend** (`totalNoPlano`): contar a partir do array da página
+daria o tamanho da PÁGINA, e o número mudaria a cada filtro.
+
+---
+
+## DEC-049 — a tela do reparcelamento (F-1c.2, só frontend)
+
+**O backend não foi tocado nesta fase.** O registro fica aqui porque o log de
+decisões é **compartilhado e numerado em série** pelos dois repos. A
+implementação está no CLAUDE.md do frontend.
+
+**O que mudou:** o botão "Reparcelar" da página do honorário, desabilitado desde
+a F-1b, passou a levar a uma tela. O endpoint continua exatamente o mesmo —
+`POST /api/fees/:id/renegotiations`, com `{ parcelas: [{valor, dataVencimento}],
+motivo? }`, 422 quando a soma diverge do saldo.
+
+**Rota dedicada, e não modal**, porque o plano novo tem N linhas editáveis e uma
+soma corrente que precisa ficar visível o tempo todo — num modal ela sai da tela
+justamente quando há mais linhas para conferir.
+
+**O contrato do backend não precisou de nada novo.** A tela deriva tudo de
+`GET /fees/:id`: o saldo de `totais.emAberto` (a mesma fórmula que
+`saldoEmAberto` usa para validar, DEC-040) e as listas do que sai e do que fica
+de `parcelas[]`, pela mesma regra do `renegotiationService` — sai o que não está
+`pago` nem `cancelado`.
+
+**Suítes na F-1c.2:** frontend **546** testes (31 novos em
+`tests/regressions/f1c2.test.js`), backend **486**, os dois com zero skip e zero
+todo. O backend continuou verde **sem ser alterado**.
+
+**Suítes na F-2a:** backend **508** testes (22 novos: 13 em
+`tests/auth/semantica401.test.js`, 9 em `tests/financial/planoDeParcelas.test.js`),
+frontend **566** (20 novos em `tests/regressions/f2a.test.js`). Zero skip, zero
+todo nos dois.
+
+**Suítes na F-2b:** backend **549** testes, **+41** sobre os 508 da F-2a — 15 em
+`tests/processClient/dec052.test.js`, 12 em `tests/infra/rateLimit.test.js` e 14
+em `tests/infra/guardaDeBanco.test.js`. Frontend **583**, +17 em
+`tests/regressions/dec052.test.js`. Zero skip, zero todo nos dois.
+
+## DEC-050 — a semântica do 401 (F-2a)
+
+**A regra, em uma frase:** *o 401 é reservado **exclusivamente** para sessão
+ausente ou inválida. Qualquer outra falha de credencial dentro de uma sessão
+válida é **422**.*
+
+**O defeito (V-2).** Errar a **senha atual** em `POST /auth/alterar-senha`
+devolvia 401. O interceptor do axios trata todo 401 como sessão perdida e
+**deslogava a advogada** — ela errava a digitação e era expulsa do sistema.
+
+**A causa é semântica, não de interceptor.** O 401 respondia a duas perguntas
+diferentes: *"não sei quem você é"* e *"sei quem você é, e este dado que você me
+mandou está errado"*. Só a primeira justifica descartar a sessão.
+
+**Por que não uma lista de exceção de rotas no frontend.** Ela resolveria este
+caso e apodreceria no próximo: a rota seguinte que devolvesse 401 por engano não
+estaria nela, e o defeito voltaria calado, num lugar diferente. A regra
+semântica não tem esse problema — e com ela o interceptor fica trivialmente
+correto: desloga em 401 e **não precisa conhecer rota nenhuma**.
+
+### O inventário completo dos 401 do backend, classificado
+
+**Categoria 1 — sessão ausente ou inválida. CONTINUA 401.**
+
+*Por arquivo e função, não por linha: linha em documento vivo apodrece — este
+CLAUDE.md já carregou uma referência `axiosConfig.js:14-26` que deixou de existir.
+O levantamento com as linhas exatas do dia está no relatório da F-2a.*
+
+| Onde | O que significa |
+|---|---|
+| `middleware/authMiddleware.js` — `authMiddleware` | token não informado |
+| idem | token do PORTAL apresentado na área da advogada (2ª tranca do isolamento) |
+| idem | usuário do token não existe mais |
+| idem | token malformado, expirado ou com assinatura que não confere (`catch`) |
+| `services/authService.js` — `loginUser` | `POST /auth/login`: e-mail inexistente |
+| idem | `POST /auth/login`: senha errada |
+| `services/portalAuthService.js` — `credenciaisInvalidas` | `POST /portal/login`: o 401 unificado da DEC-029 ponto 11 |
+| `services/portalAuthService.js` — `trocarSenha` | `PATCH /portal/senha`: cliente inexistente ou inativo — a sessão perdeu o sujeito |
+| `services/portalAuthService.js` — `reemitirSessao` | vínculo inexistente |
+| `middleware/portalAuthMiddleware.js` — `sessaoInvalida` | sessão do portal ausente, expirada ou inválida |
+
+**As rotas de LOGIN continuam 401 de propósito.** Ali não há sessão — é o pedido
+para criar uma —, e "não sei quem você é" é literalmente a resposta certa. O
+interceptor não desloga ninguém por elas porque **não havia sessão a perder**;
+ver a nota sobre `sessionLoss.js` no CLAUDE.md do frontend.
+
+**Categoria 2 — credencial conferida dentro de sessão válida. PASSOU A 422.**
+
+| Onde | Rota | O que significa | Era |
+|---|---|---|---|
+| `services/authService.js` — `changePassword` | `POST /auth/alterar-senha` | senha atual errada, sessão válida | **401** — o defeito V-2 |
+| `services/portalAuthService.js` — `trocarSenha` | `PATCH /portal/senha` | senha atual errada, sessão válida | **400** |
+
+**O 400 do portal entrou por consistência, não por defeito.** Ele não causava o
+V-2 (o interceptor do portal só reage a 401 com `sessaoPortalInvalida`). Mas é a
+**mesma pergunta** respondida com dois números diferentes, e isso é o que faz a
+próxima pessoa copiar o que vir primeiro.
+
+**422 e não 400** nos dois: o corpo está bem formado e os campos são válidos; o
+que falha é a **conferência** do valor contra o que está gravado. É a mesma
+leitura que o módulo de documentos dá ao 422 desde a Fase 4.6.
+
+**Onde a regra está escrita no código:** no cabeçalho de
+`middleware/authMiddleware.js`, que é a única origem legítima de 401 na área da
+advogada — se um 401 novo aparecer, tem de vir de lá.
+
+**O inventário é executável:** `tests/auth/semantica401.test.js` tem um teste
+por linha das duas tabelas, mais uma varredura que falha se qualquer rota
+autenticada responder 401 com sessão válida.
+
+## DEC-051 — a ordenação das parcelas por geração (F-2a, só frontend)
+
+**O backend não foi tocado por esta decisão.** O registro fica aqui porque o log
+é **compartilhado e numerado em série** pelos dois repos; a implementação está no
+CLAUDE.md do frontend.
+
+**O defeito:** na página do honorário as parcelas vinham ordenadas por número.
+Depois da DEC-048, que faz cada plano numerar a partir de 1, três gerações se
+**intercalavam** — `1 de 2` (morta), `1 de 3` (morta), `1 de 2` (viva),
+`2 de 2` (morta)… e a advogada tinha de **caçar quais valem**.
+
+**A regra:** agrupar por plano — **o plano vigente primeiro**, em ordem
+numérica; os planos substituídos depois, também em ordem numérica, cada grupo
+com um separador ("Substituídas pelo reparcelamento de 21/08/2026").
+
+**O motivo:** a pergunta que a tela responde é *"quanto ainda se deve, e
+quando"*. O histórico responde outra pergunta e não pode disputar espaço com a
+primeira.
+
+**Não apaga nada** — as canceladas continuam visíveis, com o rótulo congelado e
+o badge "Reparcelada", como a DEC-048 exige.
+
+**O que o backend fornece, e já fornecia:** `GET /fees/:id` devolve `planoId`
+(quem me criou), `reparcelamentoId` (quem me cancelou) e `reparceladaEm`. Os
+três bastam — nenhum endpoint mudou.
+
+**A sutileza que a regra precisou tratar:** um plano de 3 com a primeira parcela
+já **paga** cancela só as outras duas, e a paga continua de pé **no plano
+velho**. Por isso é o **grupo** que é "substituído", não a parcela: o separador
+diz o que aconteceu com o plano, e o badge de cada linha continua dizendo o que
+aconteceu com ela.
+
+## O seed grava o plano inteiro — a migração deixou de ser pré-condição (F-2a)
+
+**O remendo que saiu.** `npm run seed:fresh` criava as parcelas uma a uma por
+`criarInstallment`, que deixa `totalParcelas` em `null` **de propósito** — a
+advogada cria parcela por parcela pela interface, e quando a primeira nasce
+ninguém sabe que serão três. Só que o **seed sabe**: ele tem o array literal do
+plano. O resultado de gravar incompleto foi que
+`node scripts/migrarTotalParcelas.js` virou **pré-condição de todo reset**, e o
+roteiro de validação repetia as duas linhas em **seis passos**.
+
+**`criarPlanoDeParcelas(usuarioId, feeId, parcelas[])`**
+(`services/installmentService.js`) é o **terceiro instante** em que o tamanho do
+plano é conhecido de verdade — os outros dois são a criação e o cancelamento de
+um plano pelo `renegotiationService` (DEC-048). Ela cria cada parcela pelo
+caminho normal (validação, duplicidade, **auto-alocação do saldo adiantado** e
+recálculo) e só no fim carimba `totalParcelas` no plano, com o mesmo
+`updateMany` idempotente do cancelamento.
+
+**O seed usa o SERVIÇO e não escreve no model.** Dois lugares que sabem criar
+parcela divergem, e o que se perde na divergência é a auto-alocação da DEC-036,
+que dispara no nascimento da parcela e é metade do que o cenário de demonstração
+existe para mostrar. Há teste travando isso.
+
+**`scripts/migrarTotalParcelas.js` CONTINUA no repositório, e continua
+necessário.** Ele existe para dados gravados **antes da DEC-048** e é obrigatório
+em qualquer banco que não tenha sido semeado do zero. Ele também **troca o
+índice único** (`{feeId, numeroParcela}` → `{feeId, planoId, numeroParcela}`),
+coisa que o `seed:fresh` só dispensa porque `resetDev.js` faz `dropCollection` e
+o Mongoose recria o índice novo na subida. **Não apagar.** O que ele deixou de
+ser é remendo de um seed que gravava incompleto.
+
+## DEC-052 — a cascata registra o que derrubou (F-2b)
+
+**A regra, em uma frase:** *a desativação em cascata **marca** cada vínculo que
+derrubou; a reativação restaura **exatamente esses** e limpa a marca.*
+
+### O achado que a F-2a levantou e não resolveu
+
+`deleteProcess` desativa o processo **e**, na mesma transação, chama
+`desativarVinculosDoProcesso`. A cascata existe por um bom motivo: vínculo ativo
+apontando para processo inativo faria o cliente **parecer ocupado**, e o
+`DELETE /clients/:id` recusaria a exclusão por um processo que já não existe.
+
+**O problema era que ela não registrava o que fazia.** Remover um participante
+individualmente (`desvincularCliente`, pelo
+`DELETE /processes/:id/clientes/:clienteId`) gravava **exatamente o mesmo**
+`ativo: false` no mesmo campo do mesmo documento. Depois do fato, **nada
+distinguia os dois** — e reativar não tinha saída correta:
+
+| Opção | O que quebra |
+|---|---|
+| restaurar **todos** os inativos | ressuscita participantes que a advogada **removeu de propósito** |
+| restaurar **nenhum** | processo volta **vazio** — estado que o próprio sistema declara impossível, com `clientePrincipalId` (`required`) apontando para vínculo morto e a geração de documento falhando em 422 |
+
+Não havia terceira saída sem tocar na desativação. Foi por isso que a Parte 4 da
+F-2a parou.
+
+### É a TERCEIRA vez que este projeto chega à mesma conclusão
+
+> **Estado passado não se infere, se registra.**
+
+| Onde | O que se registrou em vez de inferir |
+|---|---|
+| **Estorno** (F-1a) | a alocação desfeita **guarda** que foi desfeita, em vez de ser recalculada a partir do saldo |
+| **DEC-044** | a linha do extrato que deixou de valer **diz** que deixou, em vez de a tela deduzir pela ausência |
+| **DEC-052** (agora) | a cascata **marca** o que derrubou, em vez de a reativação adivinhar depois |
+
+**Inferência sobre estado passado é o que produziu o pior defeito deste
+projeto.** Quem chegar aqui uma quarta vez: a resposta já é conhecida — grave o
+fato no momento em que ele acontece.
+
+### O campo
+
+`ProcessoCliente.desativadoPorCascataDe` — o id do processo que derrubou o
+vínculo. **Um campo, três leituras:**
+
+```
+preenchido        → caiu pela cascata do processo X (e diz qual)
+null + inativo    → foi removido À MÃO
+null + ativo      → vínculo comum, em uso
+```
+
+**Guardar o id, e não um booleano**, é redundante com `processoId` *hoje* — e é
+de propósito: o dia em que outra coisa cascatear para cá, um booleano não saberia
+dizer QUEM derrubou, e voltaríamos a inferir.
+
+**A marca é limpa na reativação.** Sem a limpeza, uma remoção manual posterior
+do mesmo vínculo carregaria marca de cascata velha e ele voltaria sozinho na
+reativação seguinte. `desvincularCliente` também zera a marca — rede de
+segurança, e há teste travando a **invariante**: *nenhum vínculo ATIVO carrega
+marca de cascata*.
+
+**As duas escritas são transacionais** com a do processo, nas duas direções:
+cascata pela metade é pior que cascata nenhuma. Há teste que força a escrita dos
+vínculos a falhar e confere que o processo continua **ativo** e sem histórico.
+
+### O que a reativação NÃO faz
+
+> ⚠️ **Leia a DEC-053 junto com esta seção.** A DEC-052 governa a **descida**
+> (o pai não arrasta o filho de volta); a **DEC-053** governa a **subida** (o
+> filho não sobe sem o pai). **São a mesma regra vista dos dois lados** — e
+> escrever só esta metade foi o que deixou o órfão passar pela F-2b. Quem mexer
+> numa precisa ler a outra.
+
+**Não cascateia para cima.** Reativar um processo não reativa o cliente dele;
+reativar um cliente não reativa os processos. Cada registro se reativa por si, e
+**a tela diz isso antes de confirmar** — sem a frase, a advogada reativa o
+cliente e presume que voltou tudo.
+
+**Mas reativar o filho sozinho não é livre**: desde a **DEC-053**, reativar um
+processo cujo cliente está desativado é **recusado**, nomeando o cliente. "Cada
+registro se reativa por si" continua valendo — na **ordem** certa: o pai
+primeiro.
+
+No cliente a ausência de cascata é estrutural, não esquecimento: `deleteClient`
+só aceita desativar quem **não participa de nenhum processo ativo**. No momento
+em que ele saiu não havia processo dele de pé para derrubar, e não há o que
+ressuscitar na volta.
+
+### Três coisas que a reativação exigiu para existir de fato
+
+**1. `historicoAtivacao` em `Process` e `Client`.** Os dois models não tinham
+histórico nenhum — o único do sistema era `Fee.historicoStatus`. Append-only,
+schema compartilhado (`models/shared/historicoAtivacaoSchema.js`), fora da
+allowlist de update. Guarda `acao`, `data` e `vinculosAfetados` (`null` no
+cliente, que não cascateia — e `null` diz "a pergunta não se aplica", enquanto
+`0` diria "cascateou e não pegou ninguém").
+
+**Não é o histórico de STATUS que a F-2c vai trazer**, e ficam separados de
+propósito: status é o andamento jurídico ("em recurso", "arquivado"), ativação é
+se o registro existe para o sistema. Um processo arquivado continua **ativo**.
+
+**2. O filtro `situacao` nas listagens.** `getAllClients` e `listProcesses`
+filtravam `ativo: true` **sem alternativa** — um registro desativado não
+aparecia em lugar nenhum, e a reativação era **impossível pela interface**.
+Três valores (`ativos` — o padrão, inalterado —, `inativos`, `todos`); valor
+desconhecido é **400 com `campo`**, porque `?situacao=ativas` devolveria os
+ativos em silêncio e a advogada concluiria que não há desativados.
+
+**3. As rotas.** `PATCH /clients/:id/reactivate` e
+`PATCH /processes/:id/reactivate`, mais `GET /processes/:id/activation-preview`
+(a contagem que a tela mostra antes de confirmar). **Sub-rota própria, e não
+`PATCH /:id { ativo: true }`**: `ativo` está fora da allowlist de update desde a
+Fase 4.5 (achados #1/#2/#11), e reabri-lo devolveria a porta que a auditoria
+fechou — a de desativar um registro por um PATCH comum, sem passar pela checagem
+de dependências.
+
+Reativar o que já está ativo é **404**, não 200 silencioso: significa que a tela
+ofereceu uma ação que não existia, e esconder isso atrasaria o diagnóstico.
+
+> **F-2d acrescentou uma quarta sub-rota pelo MESMO motivo:**
+> `PATCH /processes/:id/fase`. `fase` está fora da allowlist de update porque
+> toda mudança dela grava uma entrada de `historicoFase`, e o
+> `findOneAndUpdate` de `updateProcess` não teria onde pendurá-la. Ver a
+> **DEC-054**.
+
+## DEC-053 — nada fica ativo debaixo de coisa inativa (F-2c)
+
+**A regra, em uma frase:** *nenhum registro pode estar **ativo** enquanto o pai
+dele estiver **inativo** — nem subindo (reativar), nem nascendo (criar).*
+
+### O achado
+
+A validação da F-2b (22/08/2026, passo 197) conseguiu **reativar um processo
+cujo cliente estava desativado**. O estado que isso cria é um **órfão visível**:
+o processo volta às listagens, o cliente não, e quem clicar no nome do cliente
+cai num registro que o sistema trata como arquivado.
+
+O caminho que produz o órfão é o caminho normal, e é por isso que ele passou:
+
+1. desativa o **processo** — a cascata da DEC-052 derruba os vínculos;
+2. desativa o **cliente** — agora permitido, porque ele não participa mais de
+   processo ativo nenhum (é a guarda de `deleteClient`);
+3. reativa o **processo** — e nada perguntava pelo cliente.
+
+### Por que a F-2b não pegou: a regra existia numa direção só
+
+A **DEC-052** decidiu que reativar o **pai** não reativa os **filhos** — para
+não ressuscitar o que foi removido de propósito. Está correto e continua
+valendo. Mas **nada foi dito sobre o caminho inverso**: a cascata sabia o que
+derrubou, e nada impedia um filho de subir sozinho.
+
+| | Direção | O que garante |
+|---|---|---|
+| **DEC-052** | a **descida** | o pai não arrasta o filho de volta |
+| **DEC-053** | a **subida** | o filho não sobe sem o pai |
+
+> **São a mesma regra vista dos dois lados. Quem mexer numa precisa ler a
+> outra.** Uma sem a outra deixa metade da porta aberta, e foi exatamente essa
+> metade que produziu o órfão.
+
+### Por que a regra é GERAL, e não "Processo→Cliente"
+
+O caso achado era **instância de um princípio**, não um defeito isolado.
+Escrever só o caso teria deixado as outras portas abertas — e a segunda porta
+não é hipotética: **criar um honorário novo num processo arquivado faz o órfão
+NASCER em vez de ressuscitar**. É a mesma falha, pela outra boca.
+
+Por isso a regra tem **duas bocas**, e as duas são fechadas:
+
+| Boca | Ação | Resposta |
+|---|---|---|
+| **1** | reativar registro cujo pai está inativo | **409**, nomeando o pai |
+| **2** | criar registro sob pai inativo | **409**, nomeando o pai |
+
+### A ÁRVORE DE RELAÇÕES — levantada dos models, não presumida
+
+Vive em `src/services/activationHierarchy.js` (`ARVORE_DE_ATIVACAO`), que é o
+ponto único da regra. Só entram relações em que **pai e filho têm, os dois,
+soft delete de verdade**.
+
+| Filho | Pai(s) | Observação |
+|---|---|---|
+| `Client` | `User` | o pai é o **tenant** — ver abaixo |
+| `Process` | `Client` | pelo `clientePrincipalId` **e** por todo vínculo que a cascata restauraria. **É esta relação que produziu o órfão** |
+| `ProcessoCliente` | `Process`, `Client` | dois pais; é a própria aresta |
+| `Fee` | `Process` | **`Fee` NÃO tem `clienteId`** — conferido no model. O cliente só alcança o honorário através do processo |
+| `Installment` | `Fee`, `Process` | `processoId` é desnormalizado; `feeId` é o pai de verdade |
+| `Payment` | `Fee`, `Process` | `ativo` existe por uniformidade; nenhuma rota o escreve |
+| `Document` | `Process`, `Client`, `Fee` | `clienteId` e `feeId` são opcionais conforme o tipo |
+| `Secao` | `User` | biblioteca da advogada; pai é o tenant |
+| `DocumentoSecao` | `Document`, `Secao` | dois pais; junção documento↔seção |
+
+**Fora da árvore, e a ausência é deliberada:**
+
+| Model | Por que não entra |
+|---|---|
+| `Reversal` | **não tem `ativo`**. "Estorno que não vale mais" é um segundo estorno com `estornoAnuladoId` |
+| `Allocation` | não tem `ativo`. Sai de cena por `estornoId` |
+| `Renegotiation` | não tem `ativo` |
+| `ConfirmacaoVisualizacao` | tem `ativo` por convenção, mas **nenhuma rota o escreve** — é registro probatório, imutável por projeto |
+
+**O tenant não entra na regra, e isso é decisão.** `User.ativo` existe, mas
+nenhuma rota o escreve e o `authMiddleware` não filtra por ele: usuário inativo
+é hoje um estado que só existe se alguém editar o banco à mão. Uma guarda contra
+um estado inalcançável é código que nunca roda e que ninguém consegue testar sem
+fabricar o estado por fora. **Quando existir desativação de usuário, esta é a
+linha que vira guarda** — e a árvore acima mantém a relação no mapa até lá.
+
+### A recusa NOMEIA o pai
+
+> *"Não é possível reativar: o cliente **Beatriz Ramos Pereira** está
+> desativado. Reative o cliente primeiro."*
+
+**Recusar em silêncio é pior que permitir.** Uma mensagem genérica manda a
+advogada procurar, num cadastro de trezentos clientes, qual deles está fora. A
+frase diz **qual** pai, **pelo nome**, e **o que fazer**.
+
+O nome sai de um ponto único (`nomeDoCliente`): PF guarda em `nomeCompleto`, PJ
+em `razaoSocial`. Sem ele, metade das recusas sairia nomeando "(sem nome)" —
+justamente no caso em que o nome mais importa para achar o cadastro.
+
+**O erro:** 409, `regra: "paiInativo"` (`REGRA_CONFLITO.PAI_INATIVO`), com os
+bloqueadores em `errors.paisInativos: [{ tipo, id, nome }]`. Vão dentro de
+`errors` — que o `errorHandler` já repassa inteiro — e **não** em chave solta:
+é o que impede a allowlist de `CHAVES_ESTRUTURADAS` de crescer uma linha por
+regra.
+
+### Quais clientes bloqueiam a reativação de um processo
+
+Não basta `clientePrincipalId`: um cliente pode ser **litisconsorte** sem nunca
+ser principal, e reativar o processo restauraria o vínculo dele — o mesmo órfão,
+uma camada abaixo, onde ninguém procura. É a mesma razão pela qual
+`deleteClient` olha a **junção**, e não o campo do processo.
+
+O conjunto é: **o principal** + **todo cliente cujo vínculo a cascata da DEC-052
+restauraria** (`desativadoPorCascataDe: processoId`).
+
+**Vínculo removido À MÃO fica de fora.** Ele **não volta** na reativação — é o
+ponto inteiro da DEC-052 —, então o estado do cliente dele não importa aqui.
+Incluí-lo recusaria a reativação por causa de alguém que continuaria
+desvinculado. **É a fronteira exata entre as duas decisões, e há teste para
+ela.**
+
+### A boca 2 já era recusa — o que mudou foi a MENSAGEM
+
+Todo `findOne` de pai no projeto sempre filtrou `ativo: true`. O levantamento da
+F-2c confirmou a recusa em `createProcess`, `createFee`, `createInstallment`,
+`createPayment`, `vincularCliente` e `vincularSecao` — **e isso já era assim**.
+
+O que mudou é que "não encontrado" virou "está desativado", com o nome:
+
+| Situação | Antes | Agora |
+|---|---|---|
+| pai **inexistente** | 404 / 400 | **igual** — e continua sem confirmar existência de registro alheio |
+| pai **desativado** | 404 "não encontrado" | **409 nomeando o pai** |
+
+**Um 404 "Processo não encontrado" para um processo que a advogada está vendo na
+tela com a tag "Desativado" manda procurar o que não está perdido.**
+
+Há uma **terceira porta**, fechada junto: `PATCH /fees/:id` com `processoId`
+**movendo** um honorário para um processo desativado. O honorário continuaria
+ativo, agora sob pai inativo.
+
+**Uma exceção documentada e não corrigida:** vincular cliente a processo
+desativado responde **404**, não 409. `assertProcessoDoUsuario` é a mesma guarda
+que serve as **leituras** de participante, e um processo desativado é
+inalcançável por essa rota inteira. Mudar isso mudaria o 404 de toda leitura de
+participante — e não é o que a F-2c foi fazer.
+
+### A autoridade é do SERVIÇO
+
+A listagem (`impedimentosDeReativacao`) e o `activation-preview` carregam quem
+bloqueia, para a tela desabilitar "Reativar" com o motivo ao lado. **Isso é
+conveniência.** `reactivateProcess` recusa de qualquer forma — inclusive para
+quem chamar a rota direto, sem passar por tela nenhuma —, e **há teste que
+chama o serviço direto** para provar exatamente isso.
+
+Na listagem, `impedimentosDeReativacao` **só existe na linha desativada**: num
+processo ativo a pergunta não se aplica. No `activation-preview` do desativado
+ele vem **sempre, mesmo vazio** — ali a tela PERGUNTOU se pode reativar, e vetor
+vazio é a resposta "pode"; omitir a chave obrigaria o frontend a distinguir "não
+perguntei" de "perguntei e não há".
+
+São **duas consultas por página**, não duas por linha: a tela que mais mostra
+desativado é justamente a filtrada por "Somente desativados".
+
+### Os órfãos que já existem — `scripts/auditarOrfaos.js`
+
+`npm run auditar:orfaos` percorre a árvore e **relata** todo registro ativo sob
+pai inativo, com **pai e filho nomeados**.
+
+**Ele não conserta, e isso é decisão.** Corrigir automaticamente significaria
+escolher, sem saber, entre **desativar o filho** (esconde um processo que talvez
+esteja em andamento) e **reativar o pai** (ressuscita um cadastro que talvez
+tenha saído de propósito). **Essa escolha é da advogada** — e cada correção
+feita pela tela fica no `historicoAtivacao`, que uma correção em massa por
+script não deixaria.
+
+> **O script NÃO é destrutivo, e por isso NÃO leva a guarda de banco da F-2b.**
+> Está escrito no alto do arquivo, em voz alta, porque todo script novo em
+> `scripts/` provoca a pergunta "cadê a guarda?".
+>
+> Guarda de comando destrutivo em comando que não destrói **treina a advogada a
+> digitar o nome do banco para rodar um relatório** — e o dia em que digitar
+> `lex` virar reflexo é o dia em que a guarda dos scripts que de fato apagam
+> deixa de proteger.
+>
+> `mongoose.set("autoIndex", false)` está lá para que "só lê" seja
+> **literalmente** verdade: o Mongoose constrói índices na compilação dos
+> models, e construir índice é escrita.
+>
+> **No minuto em que ele ganhar uma escrita, ele ganha a guarda junto.** Não
+> existe meio-termo. Há teste que varre o arquivo por `updateOne`, `deleteMany`,
+> `.save(` e companhia, e que compara o banco **documento por documento** antes
+> e depois — contagem não bastaria: uma "correção" silenciosa viraria `ativo`
+> sem mudar contagem nenhuma.
+
+Um processo desativado sob cliente desativado aparece **duas vezes** no
+relatório: `Processo → Cliente (principal)` e `Vínculo processo-cliente →
+Cliente`. São dois registros ativos sob o mesmo pai inativo — e é a segunda, a
+que não vem à cabeça, que a auditoria existe para achar.
+
+---
+
+## DEC-054 — fase e encerramento são EIXOS SEPARADOS (F-2d)
+
+**O vocabulário é da Laís, dito em 23/08/2026.** Está registrado com a data
+porque é vocabulário jurídico da prática dela, e não decisão técnica: quem for
+mexer precisa saber que a fonte é ela, e não uma escolha nossa.
+
+Textualmente:
+
+> *"Fase inicial (fase de conhecimento) / Sentença / Execução / Recursos"*
+> *"Sim, pode voltar"*
+> *"Não precisa anotar o porquê, só se ela quiser mesmo"*
+> *"Liminar é um plus dentro das fases, você pede algo com urgência, mas não é
+> uma fase nova"*
+> *"Trânsito em julgado — processo encerrou completamente, acabou todos os
+> processos de recurso"*
+> *"Acordo cumprido — aí o processo finalizado e muda para trânsito em julgado"*
+
+### A leitura: ela descreveu DUAS coisas, não uma
+
+| Eixo | Campo | O que responde | Como anda |
+|---|---|---|---|
+| **Fase** | `fase` | onde o processo **está** | nos dois sentidos, sem ordem |
+| **Encerramento** | `transitoEmJulgadoEm` + `motivoEncerramento` | se ele **acabou** | um carimbo: existe ou não existe |
+
+**"Trânsito em julgado" NÃO é a quinta fase.** Um processo em recursos e um
+processo transitado em julgado não estão em pontos diferentes da mesma régua:
+um está andando, o outro parou. Modelar as duas coisas como um enum só faria
+"trânsito em julgado" competir com "execução" numa lista onde elas não se
+comparam — e a advogada teria de escolher entre dizer em que fase o processo
+está e dizer que ele acabou.
+
+O **motivo** do encerramento é onde *"acordo cumprido"* mora. O caminho que ela
+descreveu é **acordo cumprido → trânsito em julgado**: o motivo EXPLICA como se
+chegou ao fim, e o fim é um só.
+
+### Movimento livre — e a ausência de regra É a regra
+
+*"Sim, pode voltar."*
+
+**Não existe máquina de estados.** Não há transição travada, não há ordem
+exigida, não há comparação de posição em lugar nenhum — nem no serviço, nem na
+validação, nem na tela. Procure por um `indexOf` contra a lista de fases nos
+dois repos: não há nenhum, e há teste em cada um travando a ausência.
+
+> **Regra que ela não pediu é requisito inventado**, e neste projeto já custou
+> caro. A mutação (a) da F-2d — travar `recursos → conhecimento` — derruba
+> **4 testes**, e é assim que se sabe que a ausência está protegida.
+
+### O motivo é opcional; a TRANSIÇÃO não é
+
+*"Não precisa anotar o porquê, só se ela quiser mesmo."*
+
+São coisas diferentes, e a distinção é o que sustenta a F-2e:
+
+| | O que é | Obrigatório? |
+|---|---|---|
+| **motivo** | a justificativa ("por que voltou para conhecimento") | **não** |
+| **transição** | o fato ("voltou para conhecimento, em tal dia") | **sempre gravada** |
+
+Ela pediu a linha do tempo — *"finalizado por etapa — fazer linha do tempo"* —
+e uma linha do tempo é exatamente a sequência desses fatos. **Gravar só a
+partir de quando a tela existir faria a linha do tempo nascer sem passado**:
+todo processo apareceria como se nunca tivesse mudado de fase até o dia em que
+alguém implementou a tela.
+
+Por isso `historicoFase` começa a ser escrito na F-2d, e a tela vem na F-2e.
+
+A mutação (b) — tornar o motivo obrigatório — derruba **9 testes**.
+
+### `historicoFase` — append-only, como os outros dois
+
+`{ de, para, data, motivo, autorId }`. Terceiro histórico append-only do
+projeto, e pela mesma razão dos outros dois:
+
+| Histórico | Responde | Decisão |
+|---|---|---|
+| `historicoStatus` (Fee) | "este honorário esteve pago?" | DEC-038 |
+| `historicoAtivacao` (Process, Client) | "este registro esteve fora?" | DEC-052 |
+| `historicoFase` (Process) | "por onde este processo andou?" | **DEC-054** |
+
+Ficam **separados**, e a nota em `historicoAtivacaoSchema.js` já previa isto:
+um processo em execução e um processo desativado não têm nada em comum, e
+juntá-los num vetor só obrigaria toda leitura a filtrar por tipo antes de
+entender o que está lendo.
+
+**A primeira entrada é o nascimento**, com `de: null`. Sem ela, um processo
+criado direto em "execução" apareceria na linha do tempo como se sempre
+tivesse estado lá — e não haveria como distinguir "nasceu assim" de "nunca
+mudou".
+
+### `fase` tem ROTA PRÓPRIA, e está fora da allowlist do PATCH comum
+
+```
+PATCH /api/processes/:id/fase     { fase, motivo? }   → 200, grava histórico
+PATCH /api/processes/:id          { fase: "..." }     → 400, campo: "fase"
+```
+
+O 400 **aponta para a rota certa** — não é a mensagem genérica de campo
+desconhecido. É o mesmo tratamento que `ativo` e `clientePrincipalId` já têm, e
+a lista mora em `CAMPOS_COM_ROTA_PROPRIA` (`validations/shared/camposPermitidos.js`).
+
+**Por que não é só mais um campo do PATCH:** `updateProcess` grava com
+`findOneAndUpdate`, que não teria onde pendurar a entrada de histórico. Aceitar
+`fase` ali gravaria a metade das transições sem rastro — e aí a linha do tempo
+mentiria por omissão, que é pior do que não existir.
+
+Já `liminar`, `liminarObservacao`, `liminarEm`, `transitoEmJulgadoEm` e
+`motivoEncerramento` **entraram na allowlist normal**: são sinalizador e
+carimbo, não "por onde o processo andou", e não geram histórico.
+
+### Liminar é SINALIZADOR, não estado
+
+*"Liminar é um plus dentro das fases (…) não é uma fase nova."*
+
+Um booleano ao lado da fase, com observação e data **opcionais**. Pôr "liminar"
+no enum forçaria a advogada a apagar a fase real para marcar a urgência.
+
+Na tela: **selo** em cor de atenção (`--color-warning`, o tom de "Suspenso" —
+não `--color-danger`, que é o de `cancelado` e `vencido`; liminar não deu
+errado, é pedido de urgência), e **filtro** `com`/`sem`/`todos`.
+
+> **A lista NÃO se reordena por liminar.** Ela pediu **destaque**, não
+> **prioridade**, e são coisas diferentes: reordenar muda o que a advogada
+> espera encontrar onde ela deixou. Quem quiser ver só as liminares usa o
+> filtro, e decide QUANDO. Há teste nos dois repos travando a ordenação por
+> `createdAt`.
+
+`liminarEm`, e não `liminarConcedidaEm`: ela disse *"você pede algo com
+urgência"*, e pedido e concessão são momentos diferentes. Nomear o campo por um
+dos dois decidiria, por conta própria, qual deles a advogada deveria estar
+registrando.
+
+### `status` continua existindo, e continua sendo OUTRA coisa
+
+Três valores administrativos, da Fase 2: `ativo`, `encerrado`, `suspenso`.
+**Nenhum deles diz em que fase o processo está** — e foi essa a descoberta da
+F-2d: `status` e `fase` não são o mesmo eixo renomeado.
+
+A *Execucao Fiscal - IPTU* do seed está em `fase: execucao` e `status:
+suspenso` ao mesmo tempo. É exatamente o par que um enum único não conseguiria
+representar.
+
+`status` não foi apagado nem migrado: a listagem filtra por ele desde a Fase 2.
+
+### A migração — e o mapeamento que NÃO existe
+
+`scripts/migrarFaseProcesso.js` (`npm run migrar:fase`). Preenche `fase`,
+`historicoFase` e os campos de encerramento e liminar nos processos já
+gravados. Idempotente, com a guarda de banco destrutivo da F-2b.
+
+Os valores reais de `status` foram **lidos do banco de desenvolvimento**, não
+presumidos:
+
+| `status` | quantos | vai para | por quê |
+|---|---|---|---|
+| `ativo` | 7 | fase padrão — **NÃO MAPEADO** | diz que está em andamento; não distingue nenhuma das quatro |
+| `encerrado` | 2 | fase padrão — **NÃO MAPEADO** | é o eixo do ENCERRAMENTO, não o da fase |
+| `suspenso` | 1 | fase padrão — **NÃO MAPEADO** | suspende-se processo em qualquer fase |
+
+**Nenhum valor de `status` carrega informação de fase**, e o script diz isso em
+voz alta no relatório, com a contagem de cada um. **Chute silencioso em
+migração é o defeito que ninguém acha depois** — um mapeamento inventado teria
+produzido exatamente isso.
+
+Os `encerrado` saem **nominalmente** no relatório, como candidatos à revisão da
+advogada: o sistema sabe que eles acabaram, mas não sabe **como** nem
+**quando**. O script **não carimba** `transitoEmJulgadoEm` em nenhum — uma data
+inventada é pior que nenhuma, porque parece informação e não é.
+
+### PENDENTE DE RATIFICAÇÃO
+
+**O nome da primeira fase.** Ela deu duas palavras: *"fase inicial"* e *"fase
+de conhecimento"*. Adotado **"Fase de conhecimento"**, e a razão é substantiva:
+
+> "inicial" é **posicional**, e a posição deixa de valer no instante em que o
+> processo volta. Ela disse *"sim, pode voltar"* — um processo que retorna de
+> recursos para a primeira fase não está numa fase "inicial" coisa nenhuma. O
+> rótulo posicional mentiria justamente no movimento que ela pediu.
+
+Se ela preferir a outra, **muda-se o rótulo e nada é migrado**: o valor gravado
+é `conhecimento`, e valor gravado ≠ rótulo de exibição — a mesma separação da
+DEC-039, pela mesma razão.
+
+**Falta alguma fase?** Ela citou quatro, e não inventamos uma quinta. Se faltar
+(cumprimento de sentença como fase própria, por exemplo), acrescentar é uma
+linha em `config/fasesProcesso.js`.
+
+---
+
+## A DEC-053 alcança Documento — a lacuna do passo 204 (F-2d)
+
+### O achado
+
+A auditoria de órfãos, rodada contra o banco de desenvolvimento em 24/08/2026,
+achou **um** órfão, e ele era de Documento:
+
+```
+Documento → Processo
+  filho ATIVO   : Peticao de Suspensao da Execucao   [6a8c4965e2ed6915acce13fc]
+  pai   INATIVO : Execucao Fiscal - IPTU             [6a8c4965e2ed6915acce13ec]
+```
+
+As outras seis relações estavam limpas.
+
+### O diagnóstico, ANTES da correção
+
+A pergunta era: **a cascata não o alcança, ou alcança e ele escapou?** Os
+carimbos do próprio banco responderam:
+
+```
+documento criado    : 2026-08-24T13:38:45Z   (nasceu com o processo, ativo)
+processo desativado : 2026-08-24T13:48:05Z   (`vinculosAfetados: 1`)
+```
+
+**A cascata não o alcança.** `deleteProcess` derruba os vínculos
+processo↔cliente e mais nada — o `vinculosAfetados: 1` do histórico é
+exatamente a contagem deles. **O órfão nasceu da desativação**, não escapou de
+nada.
+
+E isso **não é defeito da cascata**: ela é assim de propósito desde a DEC-052.
+Honorário, parcela e pagamento também não caem junto com o processo. O órfão
+saiu em Documento e não nos outros só porque, nesta base, o processo desativado
+tinha documento e não tinha honorário.
+
+### Onde a lacuna estava de verdade: a boca 2, com a frase errada
+
+Os três pontos que criam documento sob um processo **já recusavam** o processo
+inativo. Nunca foi possível criar ali. Mas recusavam com:
+
+```
+404  "Processo não encontrado para este usuário"
+```
+
+…para um processo que existe e que a advogada está vendo na tela com a tag
+"Desativado". **É literalmente a frase que a DEC-053 nomeia como o defeito.**
+Documento era o único módulo que ainda a dava: a F-2c passou os outros seis
+para `assertProcessoAtivoParaCriar` e deixou este para trás.
+
+A F-2d passa os três, e a recusa vira **409 nomeando o processo**:
+
+| Porta | Onde | Antes | Agora |
+|---|---|---|---|
+| criar | `createDocumentService` | 404 | **409**, nomeando |
+| mover | `updateDocumentService` (`processoId`) | 404 | **409**, nomeando |
+| gerar | `carregarContexto` (geração **e** preview) | 404 | **409**, nomeando |
+
+O preview entra junto de propósito: pré-visualizar não grava nada, mas oferecer
+a prévia de uma peça que a geração recusaria é levar a advogada até o último
+clique para então dizer não.
+
+### Boca 1 — fechada POR AUSÊNCIA, e não por guarda
+
+**Não existe reativação de documento.** Não há rota, `ativo` está fora da
+allowlist de update, e nenhum serviço escreve `ativo: true` num documento já
+desativado.
+
+Não se acrescenta guarda para um caminho que não existe — é a mesma decisão
+escrita para `PAI_TENANT`, e pelo mesmo motivo: guarda que nunca roda é código
+que ninguém consegue testar sem fabricar o estado por fora do sistema. O que se
+faz é **travar a ausência por teste**, para que o dia em que a reativação de
+documento nascer, ela nasça já sabendo desta regra.
+
+### O órfão FICA no banco de desenvolvimento
+
+**De propósito, e é caso de teste vivo.**
+
+Ele não é consertado por script — a escolha entre desativar o filho e reativar
+o pai é da advogada, e essa regra não muda. Ele fica como prova de que a
+auditoria continua achando, enquanto os testes provam que um novo não pode mais
+nascer com a mensagem errada.
+
+> **Quem for limpar o banco de desenvolvimento, leia isto antes.**
+
+---
+
+## A rigidez de `deleteClient` é INTENCIONAL (levantada na F-2d)
+
+### O relato
+
+Passo 201, 24/08/2026: *"tive que desativar todos os processos que o cliente
+estava vinculado, mesmo o que ele não é o principal, para poder desativar."*
+
+A suspeita: a guarda olha **qualquer** vínculo, e por isso um cliente que é
+litisconsorte no processo de outra pessoa bloqueia a desativação — obrigando a
+advogada a mexer no processo de um terceiro.
+
+### A metade verdadeira
+
+A guarda olha qualquer vínculo ativo, **sim**. `contarProcessosDoCliente` conta
+`{ usuarioId, clienteId, ativo: true }` sem olhar `principal`.
+
+### O veredito: FICA COMO ESTÁ
+
+Afrouxá-la para o principal **criaria órfão**, e pela porta mais discreta:
+
+> `ProcessoCliente` tem **dois pais** — Processo e Cliente. Um cliente
+> desativado com um vínculo de litisconsorte ainda **ativo** é um registro ativo
+> sob pai inativo. O `auditarOrfaos.js` o reportaria como `Vínculo
+> processo-cliente → Cliente` — que é justamente a relação que o roteiro do
+> passo 204 chama de "a que não vem à cabeça".
+
+**A rigidez não é efeito colateral de olhar a junção: é o que a invariante da
+DEC-053 exige de quem olha a junção.** Trocar por `principal` seria comprar a
+conveniência de uma tela com um órfão garantido.
+
+### O que ERA defeito, e foi corrigido
+
+A saída correta **nunca foi** desativar o processo do terceiro — é
+**DESVINCULAR** o cliente dele, por `DELETE /api/processes/:id/clientes/:clienteId`,
+que existe desde a Fase 2B e não toca no processo de ninguém.
+
+A mensagem já mandava desvincular, mas **não dizia de quais processos**. Num
+cadastro com trinta processos isso é a mesma recusa genérica que a DEC-053
+nomeou como defeito — e foi por isso que o caminho mais curto pareceu ser
+desativar tudo.
+
+Agora ela:
+
+- **nomeia os processos** (corta em 3 na frase; `errors.processosBloqueando`
+  traz todos, e é dele que a tela monta a lista);
+- diz o **papel** do cliente em cada um — é ali que mora a surpresa do
+  litisconsórcio;
+- afirma que **não é preciso desativar o processo**.
+
+### E a palavra "excluir" saiu (achado do passo 184)
+
+A F-2b renomeou a ação para **"Desativar"** em Clientes e Processos. Duas
+mensagens ficaram com o verbo velho, prometendo uma destruição que não
+acontece:
+
+| Onde | Antes | Agora |
+|---|---|---|
+| `clientService.deleteClient` | "Não é possível **excluir** este cliente…" | "…**desativar**…" |
+| `processoClienteService.desvincularCliente` | "…ou **exclua** o processo" | "…ou **desative** o processo" |
+
+**Documentos, Honorários, Parcelas e Seções continuam com o verbo que têm.** A
+ação deles não virou desativação, e um verbo único faria a mensagem discordar
+do botão em quatro telas para concordar em duas.
+
+---
+
+## DIAGNÓSTICO (F-2d) — "pagamento no êxito" e "cliente inadimplente"
+
+**Nada disto foi implementado.** É o insumo de uma decisão do Daniel com a
+Laís, e mexer no enum de honorário depois do Financeiro 2.0 fechado é caro.
+
+Ela citou duas coisas que são **financeiras, não processuais**:
+
+> *"Cliente inadimplente — cliente não pagou, mas o processo acabou."*
+> *"Pagamento no êxito — pagamento é recebido quando o cliente receber."*
+
+### "Pagamento no êxito" cabe no `TIPOS_HONORARIO`?
+
+O enum está **congelado pela DEC-039** e tem três valores: `fixo`,
+`percentual`, `custas`.
+
+**Não cabe — e o motivo é que ele não é um tipo, é uma CONDIÇÃO DE
+EXIGIBILIDADE.**
+
+Os três valores atuais respondem *"como o valor é calculado?"*. "Pagamento no
+êxito" responde outra pergunta: *"quando o valor se torna devido?"* — e a
+resposta dela é **quando o cliente receber**. As duas perguntas são
+independentes: um honorário de êxito pode ser fixo (R$ 5.000 se ganhar) ou
+percentual (10% do que o cliente receber).
+
+**Representá-lo como `percentual` perderia exatamente o que ele tem de
+próprio:**
+
+| O que o sistema precisaria saber | `percentual` responde? |
+|---|---|
+| quanto é | sim (`percentual` × `valorBase`) |
+| quando vence | **não** — `dataVencimento` é obrigatório e seria uma data inventada |
+| se já é devido | **não** — nasceria `pendente` e envelheceria para `vencido` |
+
+O dano concreto é mensurável, e não é hipotético: `dataVencimento` é
+`required: true` no model. Um honorário de êxito cadastrado hoje precisa de uma
+data que **ninguém sabe** — e no dia seguinte a ela o dashboard passa a contar
+esse valor como **vencido**, o cliente aparece devendo, e a advogada cobra uma
+quantia que ainda não é devida.
+
+**O que faltaria** (para a decisão, não para implementar agora):
+
+1. um campo de **condição de exigibilidade** no honorário, ortogonal ao `tipo`
+   — o mesmo formato de eixo separado que a DEC-054 acabou de usar para fase e
+   encerramento. Enquanto a condição não se realiza, o honorário fica fora do
+   vencido e fora do "em aberto" do dashboard;
+2. `dataVencimento` **opcional** quando a condição for "no êxito" — hoje é
+   `required`, e é essa obrigatoriedade que força a data inventada;
+3. o **evento** que realiza a condição ("o cliente recebeu"), que é o que faz o
+   valor virar devido e nascer a parcela.
+
+**Acrescentar `"exito"` ao enum resolveria o rótulo e não resolveria nenhum dos
+três.** O honorário continuaria vencendo numa data inventada — só que agora
+com um nome que sugere que o problema foi tratado.
+
+> Vale notar que o CLAUDE.md já registrava a dúvida desde a Fase 4.6: *"êxito e
+> sucumbência podem ser tipos que faltam"*. O diagnóstico da F-2d responde:
+> **êxito não é um tipo que falta — é um eixo que falta.** "Sucumbência",
+> essa sim, parece ser um tipo (é honorário devido pela parte contrária), e
+> continua pendente de ratificação como estava.
+
+### "Cliente inadimplente" — estado, derivado, ou já existe?
+
+**É DERIVADO, e o dado já está todo no banco.** Não é estado de cliente, e não
+deve virar campo.
+
+O que existe hoje:
+
+- `Installment.status` tem `vencido`, e ele é **derivado** — `paymentService`
+  linha 74: `if (new Date(installment.dataVencimento) < hoje) return "vencido"`;
+- `dashboardService` já conta e soma as vencidas (`vencidas`, `valorVencido`);
+- o caminho do cliente até a parcela existe inteiro:
+  `Client → ProcessoCliente → Process → Fee → Installment`.
+
+Então *"cliente inadimplente"* = **cliente com ao menos uma parcela vencida em
+aberto**. É uma consulta, não um campo.
+
+**Gravá-lo como campo do cliente seria o erro**, e o projeto já tem o
+precedente escrito: `Fee.status` é derivado desde a DEC-028 justamente porque
+um status de dinheiro gravado à mão **diverge do dinheiro** no primeiro
+pagamento que alguém registra. Um `cliente.inadimplente: true` ficaria `true`
+depois de o cliente pagar, até alguém rodar uma rotina — e ninguém saberia
+qual dos dois está certo.
+
+**A parte da frase dela que o sistema NÃO responde hoje** é a segunda:
+*"…mas o processo acabou"*. Isso é a interseção dos dois eixos —
+`transitoEmJulgadoEm` preenchido **e** parcela vencida em aberto —, e é o caso
+que mais dói: o processo saiu da rotina da advogada e a dívida ficou.
+
+A DEC-054 acabou de criar a metade que faltava (`transitoEmJulgadoEm`). A outra
+metade já existia. **O que falta é a consulta e a tela** — e isso é fase
+própria, não emenda.
+
+---
+
+## Passos 90–98 (portal) — o levantamento da F-2c
+
+**Conclusão, antes do detalhe: eles NÃO são "controles de acesso do portal por
+implementar". São passos de VALIDAÇÃO MANUAL de funcionalidade que já existe,
+entregue na Fase 3.2 — e nunca executados.**
+
+A pendência vinha sendo carregada fase após fase com a marca *"antes de qualquer
+cliente real usar o portal"*, e a redação foi endurecendo até parecer trabalho
+de código não feito. O levantamento da F-2c leu os nove passos e confrontou cada
+um com o código. **Nenhum deles descreve controle de acesso ausente.**
+
+### O que cada um exige, e onde ele está
+
+| # | O que o passo exige | Marca | Veredito | Onde |
+|---|---|---|---|---|
+| **90** | PDF e DOCX baixam com nome do servidor, abrem no aparelho | `[só olho humano]` | **atendida** (código) | `portalController.js:76` (`Content-Disposition`), `documentRenderService.js:75` (`montarNomeArquivo`) |
+| **91** | Confirmação **depois** do conteúdo, sem modal; declaração inteira; recibo em fuso de Brasília | `[só olho humano]` | **atendida** (código) | `PortalProcessPage.jsx:176` (bloco por último), `portalLabels.js:91` (`America/Sao_Paulo`) |
+| **92** | Confirmar de novo **não apaga** a anterior; as duas aparecem | `[automatizável]` | **atendida + automatizada** | `PortalConfirmation.jsx:99,159`; `tests/portal/confirmacao.test.js:238` |
+| **93** | Botão "Sair" visível na barra; *voltar* não devolve a sessão | `[só olho humano]` | **atendida** (código) | `PortalLayout.jsx:34` |
+| **94** | Definir/entregar/redefinir/revogar senha; senha **nunca** exibida; mensagem pronta **sem** a senha; CPF recusado com mensagem própria | `[automatizável]` | **atendida + automatizada** | `AccessDelivery.jsx:109`; `clientValidation.js:63–71` (CPF/CNPJ); `tests/portal/auth.test.js:338` |
+| **95** | O código cabe numa ligação — legibilidade ao ditar | `[só olho humano]` | **inverificável por código** | `utils/accessCode.js` |
+| **96** | Selos "Confirmou a leitura" × "Acessou, não confirmou" | `[automatizável]` | **atendida**; automatizada **só no backend** | `portalEstados.js:23`; `statusVisual.js:98–99`. **Sem teste de frontend para os selos** |
+| **97** | Contador do dashboard zera ao **olhar a lista**, não ao abrir o processo | `[automatizável]` | **atendida + automatizada** | `ProcessDetailPage.jsx:103,254`; `tests/portal/confirmacao.test.js:352` |
+| **98** | Aviso de visibilidade nas **duas** regerações, com textos **diferentes** | `[só olho humano]` | **atendida + automatizada** | `GenerationPanel.jsx:291,324`; `tests/documents/regeracao.test.js:126–163` |
+
+### O controle de acesso propriamente dito — já existe, e é testado
+
+A dimensão que a redação da pendência sugeria (*"um cliente ver dado de
+outro"*) **não está nesses nove passos**, e está implementada e coberta:
+
+- `portalAuthMiddleware.js:58–90` — **o vínculo é revalidado a cada
+  requisição**, nunca confiado ao token: cliente, processo e vínculo precisam
+  estar **ativos**, o token precisa **coerir** com o vínculo no banco, e o
+  carimbo da senha invalida sessões anteriores. Revogar acesso tem efeito
+  **imediato**, sem esperar as 2 h da sessão;
+- `tests/portal/isolamento.test.js` — token de portal não vale em rota da
+  advogada e vice-versa; a sessão de um vínculo não alcança outro; o código do
+  cliente A nunca devolve o processo do cliente B; a senha de um cliente não
+  abre o código de outro; varredura de `senhaPortalHash`, `codigoAcesso`,
+  `usuarioId`; e um **placar explícito de "zero vazamentos"**.
+
+### O que a F-2c NÃO fez, e por quê
+
+**Nenhuma linha de código.** Não havia exigência desatendida para implementar:
+cinco dos nove são `[só olho humano]` por definição — *"nenhum script abre um
+DOCX no Word do Android para ver se corrompeu"* —, e os quatro `[automatizável]`
+já têm código **e** cobertura.
+
+**A única lacuna real encontrada:** o passo **96** (selos de litisconsórcio) tem
+o vocabulário travado no backend e os rótulos em `statusVisual.js`, mas **não
+tem teste de frontend** provando que a tela do processo os exibe. É pequeno, é
+verificável, e fica registrado aqui em vez de virar código numa fase cujo portão
+de escopo já tinha sido gasto na Parte 1.
+
+> **A pendência continua aberta — como VALIDAÇÃO, que é o que ela sempre foi.**
+> Os nove passos precisam do Daniel, num celular de verdade, antes de qualquer
+> cliente real usar o portal. Nenhuma fase de código os fecha.
+
+---
+
+## Rate limit — os tetos por ambiente (F-2b)
+
+**O passo 85 nunca foi código a escrever.** Ele é **pré-voo**: conferir que a
+demonstração não está rodando com `NODE_ENV=production`. O teto por ambiente já
+existia desde a auditoria, e o passo foi validado em 17/08/2026. Lido o código
+na F-2b, o comportamento anterior **não estava** nem atrapalhando o
+desenvolvimento nem desligado onde deveria valer.
+
+Duas coisas reais apareceram na leitura, e as duas foram feitas:
+
+**1. Uma cópia só.** O bloco inteiro — multiplicador, `ehProducao`,
+`inteiroPositivo`, a janela — estava **duplicado** em `authRoutes.js` e
+`portalRoutes.js`, linha por linha. Foi para `src/config/rateLimit.js`. Duas
+cópias da mesma decisão divergem: bastaria ajustar uma para o portal e a área da
+advogada passarem a se comportar diferente sem ninguém notar.
+
+**2. `test` deixou de ser tratado como `development`.**
+
+| Ambiente | Fator | Teto de cadastro (default 5) |
+|---|---|---|
+| `production` | **1×** | **5** — o limite de verdade |
+| `development` | **20×** | 100 |
+| `test` | **500×** | 2500 |
+| desconhecido | 20× (cai no de dev) | 100 |
+
+Os dois primeiros já eram assim. O terceiro é novo, e a conta que o motivou: a
+suíte faz **mais de 60 cadastros** numa execução de ~6 minutos — ou seja, dentro
+de **uma única janela de 15**. Com o fator de dev, o teto era 100: margem de um
+terço, e ela encolhe a cada fase (486 → 549 testes entre a F-1c.2 e a F-2b). No
+dia em que estourasse, a falha **não diria "rate limit"** — apareceria como um
+cadastro recusado num teste que não tem nada a ver com autenticação.
+
+**500 e não `Infinity`:** um número mantém o limitador montado, exercitando o
+mesmo caminho de código que roda em produção. Desligá-lo faria a suíte deixar de
+cobrir o middleware inteiro.
+
+**Ambiente desconhecido cai no fator de DESENVOLVIMENTO, nunca no de produção** —
+errar para o lado seguro: um `NODE_ENV=staging` no teto de produção derrubaria
+uma demonstração.
+
+**`RATE_LIMIT_MULTIPLICADOR` sobrepõe o fator.** Existe para quem precisa de um
+teto exercitável sem declarar `NODE_ENV=production` — é o caso da sonda que
+estoura o balde do portal (`tests/portal/fixtures/rateLimitProbe.mjs`) para
+provar que ele é independente dos baldes da advogada. Declarar produção ali
+arrastaria o `errorHandler` e o resto do sistema junto.
+
+**Os defaults de produção NÃO mudaram** e não devem ser baixados: 5 cadastros,
+10 logins, 5 trocas de senha, 5 acessos ao portal, por 15 minutos.
+
+## Guarda dos comandos destrutivos (F-2b)
+
+`npm run seed:fresh` derruba **treze coleções**; `migrarTotalParcelas.js`
+reescreve parcelas e **troca um índice único**; `seed:demo:clean` apaga tudo do
+usuário demo. Os três rodam contra o banco de **desenvolvimento**, que neste
+projeto é **Atlas remoto e compartilhado** — não um Mongo local descartável.
+
+Só o banco de **teste** tinha guarda (`tests/helpers/env.js`). O de
+desenvolvimento não tinha nenhuma, e **já aconteceu de um `seed:fresh` apagar
+dados no meio de uma validação**.
+
+**Aviso que não interrompe é aviso que ninguém lê.** Os scripts já imprimiam o
+banco em que estavam mexendo, e isso não impediu o acidente: a saída rola, o
+comando já está rodando, e quando a linha aparece o dano está feito. A guarda
+(`scripts/lib/guardaDeBanco.js`) **INTERROMPE**.
+
+**Confirma-se digitando o NOME DO BANCO**, não "s/n". "y" é memória muscular:
+quem roda `seed:fresh` seis vezes num dia responde "y" sem ler. Digitar `lex`
+obriga a olhar **qual** banco está no alvo — e é exatamente esse o erro que a
+guarda existe para pegar.
+
+| Situação | O que acontece |
+|---|---|
+| banco **local** (`localhost`, `127.0.0.1`, `::1`) | passa direto, **sem perguntar** — perguntar num banco descartável treinaria a resposta automática |
+| banco **remoto**, terminal interativo | interrompe e exige o nome digitado |
+| banco remoto, **sem TTY** | **RECUSA** — um script encadeado rodaria a operação sem ninguém ter visto a pergunta |
+| `LEX_CONFIRMA_BANCO=sim` ou `--sim`/`--yes`/`-y` | dispensa, de propósito |
+| conjunto **misto** de hosts | tratado como remoto: basta um nó fora da máquina |
+| URI vazia ou torta | **não** é considerada local — o que não se classifica, pergunta |
+
+**A URI nunca aparece na saída, nem mascarada** — ela carrega usuário e senha do
+cluster. O que se imprime é o **nome do banco**, que é o que a pessoa precisa
+para decidir. O host do cluster saiu do log de `resetDev.js` pelo mesmo motivo.
+
+**`--dry-run` da migração não pergunta**: é justamente o modo que existe para
+olhar antes de agir. **O seed comum também não** — `seed:fresh` é
+`reset:dev && seed:demo`, e o reset já perguntou; perguntar duas vezes na mesma
+execução treina a resposta automática. Só o `--clean` tem guarda própria, porque
+é chamado sozinho.
+
+## DEC-055 — o que é FATO se grava; o que é DERIVADO se deriva (F-3)
+
+**A regra, em uma frase:** *o calendário mostra duas naturezas de coisa, e só
+uma delas é gravada.*
+
+| | O quê | Vem de |
+|---|---|---|
+| **Evento próprio** | audiência, prazo, reunião, outro | a coleção nova `events` |
+| **Data derivada** | vencimento de parcela, vencimento de honorário | `installments` e `fees`, **lidos na consulta** |
+
+**Data derivada NUNCA é gravada como evento.** Ela é lida da origem no momento
+em que o calendário é consultado, e some da resposta no instante em que sumir
+de lá.
+
+### O porquê, dito pelo defeito que gravar produziria
+
+Gravar significaria **duas fontes para o mesmo vencimento**. As duas concordam
+no dia em que nascem, e **divergem no primeiro reparcelamento**:
+
+1. a advogada reparcela um honorário de 5 parcelas em 3;
+2. a DEC-037 cancela as 5 antigas e cria as 3 novas;
+3. o calendário, que gravou 5 eventos em setembro, **continua mostrando os 5**.
+
+E não os mostra como um resto esquecido: mostra-os **com o mesmo peso visual de
+uma audiência**, porque a essa altura eles são eventos como qualquer outro. A
+advogada leria, na agenda dela, cinco cobranças que não existem mais — e não
+haveria nada na tela dizendo qual das duas listas vale.
+
+> É a lição da **DEC-048** aplicada a data, e a decisão sai **oposta** de
+> propósito. Lá, `totalParcelas` foi **gravado** porque congelar o passado era o
+> requisito: um recibo entregue não pode mudar de significado. Aqui o calendário
+> responde *"o que vence"*, que é pergunta sobre o **presente** — e uma resposta
+> congelada para uma pergunta sobre o presente é uma resposta errada.
+
+### As três consequências, e todas aparecem na tela
+
+1. **A derivada não é editável no calendário. Clicar nela leva à parcela.**
+   Mudar vencimento se faz onde o vencimento mora. Um campo de data editável na
+   grade seria a segunda fonte voltando pela porta da interface.
+   O item traz `editavelNoCalendario: false` **explícito**, e não deduzido da
+   `natureza`: regra deduzida é regra que a próxima tela deduz ao contrário.
+2. **As duas se distinguem no relance**, por **três** sinais somados — cor,
+   barra listrada e borda tracejada —, com **legenda** dizendo qual é qual.
+   Cor sozinha não alcança quem não a enxerga, e é a mesma pessoa que não
+   receberia a informação de que uma das linhas não se edita. O nome da natureza
+   vai também em texto acessível.
+3. **Parcela de honorário cancelado por reparcelamento não aparece.** Mesma
+   regra do dashboard. Ela continua legível no **extrato**, onde a pergunta é
+   "o que aconteceu com esta cobrança"; não pertence ao calendário, onde a
+   pergunta é "o que vence".
+
+### O contrato
+
+```
+GET /api/calendar?de=AAAA-MM-DD&ate=AAAA-MM-DD[&processoId=...]
+→ { de, ate, hoje, itens: [ { natureza: "evento" | "derivada", ... } ] }
+```
+
+**Endpoint único**, e não dois. Duas rotas fariam a tela emitir duas
+requisições, receber duas respostas em tempos diferentes e concatená-las — a
+grade renderizaria uma vez com metade do mês, e a ordenação (que é do
+CALENDÁRIO, não de cada fonte) teria de ser refeita no cliente.
+
+**Não há rota de ESCRITA em `/api/calendar`.** Nem POST, nem PATCH, nem DELETE.
+A ausência é a decisão, e está travada por teste: uma rota de escrita aqui seria,
+na prática, o lugar onde alguém gravaria a derivada.
+
+**As duas bordas são obrigatórias**, ao contrário das listagens financeiras
+(onde `de` sozinho é "daqui em diante"): um calendário sempre sabe a janela que
+mostra, e "de junho em diante" não é uma tela que exista. Teto de **366 dias** —
+o maior recorte legítimo é um ano, e o bissexto é o maior ano.
+
+**Intervalo invertido recusa com a mensagem que já existia** (`filtroPeriodo`,
+passo 174). Reaproveitada, e não reescrita: duas frases diferentes para o mesmo
+engano, em duas telas do mesmo sistema, fazem a advogada achar que são dois
+problemas. Há teste comparando as duas respostas caractere a caractere.
+
+### O vencimento do próprio honorário só entra quando não há parcela
+
+Decisão tomada nesta fase, e registrada porque não estava no enunciado: o
+`dataVencimento` do **honorário** aparece apenas quando ele **não tem parcela
+vigente nenhuma**. Com um plano emitido, o vencimento do honorário e a última
+parcela do plano são a mesma obrigação vista de dois lugares, e mostrar as duas
+poria **dois marcadores no calendário para uma dívida só**.
+
+É a DEC-055 aplicada entre duas derivadas: basta escolher a mais específica, e a
+mais específica é a parcela — porque é ela que a advogada recebe.
+
+---
+
+## A DECISÃO DE FUSO — data de calendário NÃO é instante (F-3)
+
+**O risco número um da fase**, e o projeto já tinha precedente: o defeito de
+fuso do recibo do portal (passo 91).
+
+### O defeito que esta decisão evita
+
+Um evento gravado como **instante UTC** e lido no navegador **muda de dia**:
+`2026-09-01T00:00:00.000Z` renderizado em Brasília (UTC−3) é **31/08 às 21h**. A
+audiência de terça aparece no domingo — e quem olhar a grade **não desconfia do
+calendário, desconfia da própria memória.**
+
+### A causa, em uma frase
+
+> **Data sem hora não é um instante. É uma casa do calendário.**
+
+"01/09/2026" não nomeia um ponto na linha do tempo; nomeia uma casa. Um ponto
+precisa de fuso para virar dia, e é **o fuso inventado** que produz o
+deslocamento.
+
+### As três decisões que decorrem disso
+
+O ponto único é **`src/utils/dataDeCalendario.js`**.
+
+1. **Entrada ESTRITA.** Só `AAAA-MM-DD`. Um instante ISO
+   (`2026-09-01T03:00:00.000Z`) é **recusado com 400**, e não normalizado em
+   silêncio: ele carrega um fuso que a data de calendário não tem, e adivinhar
+   que dia ele quis dizer é a adivinhação que produz o defeito. A mensagem dá o
+   **contraexemplo**, porque um "data inválida" seco para um valor que parece
+   válido manda procurar o erro no lugar errado.
+   Dia inexistente (`2026-02-31`) também é recusado — `Date.UTC` o deslizaria
+   para 03/03 em silêncio.
+
+2. **Armazenamento em meia-noite UTC.** É o que `dataVencimento` e
+   `dataPagamento` já fazem desde a Fase 4, e o que `dashboardService` e
+   `filtrosDeConsulta` já pressupõem ao recortar mês e período com `Date.UTC`.
+   Escolher outra coisa faria o calendário e o financeiro discordarem sobre em
+   que dia cai a mesma parcela.
+
+3. **Saída como STRING `AAAA-MM-DD`, e não como instante ISO.** *Esta é a
+   mudança de verdade da fase*, e é a que fecha o buraco em vez de remendá-lo.
+
+   O projeto até aqui devolvia o instante e consertava **na exibição**, com
+   `timeZone: "UTC"` em `formatters.js`. Isso funciona — e funciona **só
+   enquanto ninguém esquecer**. É remédio aplicado em cada ponto de chamada, e
+   uma grade de calendário compara datas dezenas de vezes por render: um
+   `new Date(iso).getDate()` esquecido devolve o dia errado **sem erro nenhum e
+   sem teste vermelho**.
+
+   Uma string que diz exatamente o que significa não pode ser mal lida. Não há
+   fuso para aplicar, nem fuso para esquecer de aplicar.
+
+**Assimetria proposital na resposta:** `data` sai como `AAAA-MM-DD`;
+`concluidoEm`, `createdAt` e o `instante` da linha do tempo saem como ISO
+completo. É a própria resposta dizendo quais campos são casa de calendário e
+quais são ponto na linha do tempo.
+
+### A HORA é string, e nunca entra no `Date`
+
+`"14:30"` ou `null`. É **hora de parede do escritório**: "a audiência é às
+14h30" não muda de número porque alguém abriu o sistema noutro fuso.
+
+Somá-la ao `data` devolveria o campo à condição de instante — o defeito inteiro,
+reintroduzido pela porta dos fundos e **só nas linhas que têm horário**. O mesmo
+campo mentiria em metade da grade.
+
+### "Hoje" é UTC, e a janela de 3 horas é DÍVIDA ACEITA
+
+`hojeComoDataDeCalendario()` lê o dia em UTC, como `dashboardService` já faz na
+conta de "vencidas" e "próximos vencimentos".
+
+**A consequência é conhecida:** das 21h às 24h de Brasília, o "hoje" do sistema
+já é o dia seguinte. Adotar o fuso do escritório **só aqui** consertaria o sino
+e faria a contagem de parcelas vencidas do sino **discordar da do painel por
+três horas todo dia** — dois números para a mesma pergunta, que é a classe de
+defeito que a DEC-048 e a DEC-055 existem para impedir.
+
+**Quando o projeto adotar um fuso de escritório, ele muda AQUI**, e as duas
+telas mudam juntas. É para isso que a função é uma só.
+
+### A prova
+
+`tests/calendar/fuso.test.js` grava e lê **01/09/2026 (terça-feira)** em
+`America/Sao_Paulo` (UTC−3) e `Pacific/Kiritimati` (UTC+14) — um a oeste e um a
+leste, porque dois fusos do mesmo lado provariam metade da regra. Confere a
+resposta da criação, a da leitura, a do calendário, e **o instante gravado no
+banco**: se alguém trocar o parser por um `new Date(...)` local, o banco denuncia
+mesmo que a leitura ainda bata por acaso.
+
+No frontend, `monthGrid.js` é varrido por `.getDate(`, `.getMonth(`,
+`.getFullYear(`, `.getDay(` e `.setDate(` — **nenhum método de hora local** — e
+a grade é construída três vezes em fusos diferentes para provar que sai igual.
+
+---
+
+## A DEC-053 alcança Evento — o primeiro pai OPCIONAL da árvore (F-3)
+
+`Event` entra em `ARVORE_DE_ATIVACAO` com `pais: ["Process"]` e
+**`paiOpcional: true`**.
+
+**É o primeiro filho da árvore cujo pai pode não existir.** Um evento pode
+existir solto — *"nem toda reunião é de um processo"* —, e o evento solto
+simplesmente **não tem pai que possa estar inativo**: ele não entra na regra, e
+não porque a regra o dispense, mas porque **a pergunta não se aplica**.
+
+Onde há `processoId`, a regra vale inteira:
+
+| Boca | Ação | Resposta |
+|---|---|---|
+| **1** | reativar evento sob processo desativado | **409** nomeando o processo |
+| **2** | criar evento sob processo desativado | **409** nomeando o processo |
+| **3ª porta** | `PATCH /events/:id` **movendo** para processo desativado | **409** nomeando o processo |
+
+A terceira porta é a mesma que a F-2d fechou em `PATCH /fees/:id`: sem ela o
+órfão nasceria **pela edição** em vez de pela criação.
+
+**A auditoria alcança Evento**, e a inclusão importa mais do que parece: a
+cascata da DEC-052 **não** derruba eventos (como não derruba honorário, parcela
+nem documento). Um evento de processo arquivado **continua aparecendo na agenda
+da advogada** — e o compromisso órfão é o pior tipo, porque ele ainda tem uma
+data, e a data ainda chega.
+
+---
+
+## DEC-056 — a linha do tempo é APRESENTAÇÃO, não coleta (F-3)
+
+> A Laís pediu: *"finalizado por etapa (fazer linha do tempo)"*.
+
+**O substrato já existia.** A **DEC-054** (F-2d) começou a gravar toda transição
+de fase com `de→para`, data e autor **antes de existir tela**, e de propósito: a
+nota de `historicoFaseSchema.js` diz por quê — gravar só a partir de quando a
+tela existisse faria a linha do tempo **nascer sem passado**, com todo processo
+parecendo nunca ter mudado de fase até o dia da implementação.
+
+`GET /api/processes/:id/timeline`. **Só leitura**, e há teste varrendo o serviço
+por `.save(`, `.create(`, `updateOne` e companhia.
+
+### O que entra
+
+| Tipo | O quê |
+|---|---|
+| `fase` | a transição `de→para`, com o motivo **quando houver** |
+| `encerramento` | o trânsito em julgado, com o motivo |
+| `liminar` | a marcação, **só quando tem data** |
+| `evento` | os eventos do processo, **passados e futuros** |
+
+A entrada de nascimento (`de: null`) é **dita como nascimento**: sem isso, um
+processo criado direto em "execução" apareceria como se sempre tivesse estado
+lá.
+
+**Liminar sem data não entra** — sinalizador sem momento não cabe numa linha do
+tempo. Ele continua aparecendo como **selo** no cabeçalho (DEC-054), que é onde
+um sinalizador sem data pertence.
+
+### Os futuros ficam VISIVELMENTE à frente do "hoje"
+
+Uma linha do tempo que parasse em hoje seria um histórico, e histórico já existe.
+O corte (`futuro: true/false`) vem do **backend**, junto com o `hoje`: o
+navegador não sabe o "hoje" do servidor, e um relógio atrasado poria uma
+audiência de amanhã do lado errado da linha.
+
+Na tela, a marca do "hoje" é uma **linha na régua**, e não um estilo por item: o
+que a advogada procura ao abrir isto é **onde o presente está**, e um contorno
+diferente em cada item obriga a percorrer a lista para descobrir.
+
+**No mesmo dia, o fato consumado vem antes do compromisso marcado.** A mudança
+de fase registrada hoje às 10h já aconteceu; a audiência marcada para hoje pode
+não ter acontecido. Inverter isso inverteria a leitura no único dia em que ela
+importa.
+
+### O FINANCEIRO NÃO ENTRA, e a exclusão é a decisão
+
+Nem honorário, nem parcela, nem pagamento, nem estorno, nem reparcelamento.
+
+O extrato do honorário responde outra pergunta — *"quanto foi cobrado, quanto
+entrou, e o que voltou"* — e já a responde bem, com a DEC-044 marcando toda
+linha que deixou de valer. Misturar as duas faria **uma tela que não responde
+nenhuma**: a sequência de fases de um processo de dois anos tem cinco entradas,
+e o extrato de um honorário parcelado em doze tem quarenta. O que a advogada veio
+ver aqui ficaria soterrado pelo que ela veio ver em outro lugar.
+
+**Há teste varrendo os imports do serviço** por `Fee`, `Installment`, `Payment`,
+`Allocation`, `Reversal` e `Renegotiation`, e outro conferindo que nenhum valor
+em reais vaza na resposta. É o que impede a próxima fase de "completar" a linha
+do tempo sem decisão.
+
+A ficha financeira **continua na mesma página**, em seção própria e **irmã** da
+linha do tempo — não dentro dela.
+
+---
+
+## O que a F-3 EXCLUIU, e por quê
+
+**Exclusão registrada é o que impede a próxima fase de "completar" o calendário
+sem decisão.** Cada item abaixo é um subsistema inteiro, e nenhum foi pedido.
+
+| Excluído | Por quê |
+|---|---|
+| **Recorrência** | "toda segunda às 14h" exige série, exceção e edição de "só esta ocorrência". É fase própria. **Cada evento é uma data.** |
+| **Contagem de prazo processual** | dias úteis, suspensão forense e feriados exigem **tabela de feriados e regra por tribunal**. O `prazo` desta fase é uma **data que a advogada digita**, não uma data que o sistema calcula — e está escrito em voz alta em `config/tiposEvento.js`, porque é dali que a pergunta vai nascer. |
+| **Web Push** | notificação no celular com o app fechado exige **service worker novo, permissão e chaves VAPID**. Aviso é **sino com contador dentro do sistema**. Decisão do Daniel em **24/08/2026**. Há teste varrendo `public/sw.js` por `push`, `notificationclick` e `showNotification`, e o componente do sino por `Notification.requestPermission` e `pushManager`. |
+| **Convite, participante externo, integração Google/Outlook** | subsistema inteiro, com autenticação de terceiro e sincronização bidirecional. Não foi pedido. |
+
+Se algum deles parecer necessário para o resto funcionar, **pare e reporte** em
+vez de implementar.
+
+---
+
+## O SINO — três casos, e nenhum estado de lido (F-3)
+
+`GET /api/calendar/avisos` → eventos de **hoje**, eventos **atrasados** (data
+passada, não concluídos) e parcelas **vencidas**.
+
+**Não existe "marcar como lido", e a ausência é a regra.** O número muda sozinho
+com o dia e com o que a advogada resolve. Um contador que só zera com clique
+**treina a pessoa a zerar sem olhar** — e a partir do dia em que zerar vira
+reflexo, ele deixa de significar qualquer coisa.
+
+Aqui, **resolver o item é o que baixa o número**: concluir o evento, pagar a
+parcela. Clicar no sino abre a lista e não muda nada. Há teste varrendo o
+componente por `.post(`, `.patch(`, `.delete(` e por `marcarComoLido`, `setLido`,
+`naoLidos`, `unread`.
+
+**O evento de hoje não conta também como atrasado** (`$lt` e não `$lte`): contá-lo
+nas duas listas faria o total somar o mesmo compromisso duas vezes.
+
+**O total vai calculado do backend**, e a tela não soma: se ela somasse, o dia em
+que um quarto caso entrasse ela continuaria mostrando três — e ninguém notaria,
+porque o número continuaria plausível.
+
+**Zero não aparece, nem como "0".** Um badge com zero ocupa o mesmo espaço e a
+mesma cor de um badge que significa alguma coisa, e a pessoa aprende a ignorar os
+dois.
+
+O badge usa `--color-warning`, e não `--color-danger`: um prazo de hoje e uma
+parcela vencida pedem **ação**; não anunciam que algo deu errado. Mesmo tom do
+selo de liminar da DEC-054, pela mesma razão.
+
+---
+
+## Tipos de evento — PROVISÓRIOS, pendentes de ratificação (F-3)
+
+`config/tiposEvento.js`: **audiência, prazo, reunião, outro**.
+
+Os quatro saíram do **enunciado da fase**, e **não da Laís**. Nascem marcados,
+do mesmo modo que a DEC-039 marcou o tipo de honorário e a DEC-054 marcou o nome
+da primeira fase processual.
+
+**A marca não é formalidade.** Vocabulário jurídico é da prática de quem advoga,
+e este projeto já aprendeu, na F-2d, que um enum inventado por nós
+(`status`: ativo/encerrado/suspenso) sobrevive fases inteiras parecendo decidido
+— até alguém perguntar e descobrir que ele não responde à pergunta que ela faz.
+
+**Candidatos óbvios que NÃO entraram:** perícia, diligência, despacho,
+sustentação oral. Acrescentar é uma linha. O que não se faz é adivinhar a lista
+dela e depois migrar dado gravado sob um valor que ela nunca usou.
+
+Valor gravado ≠ rótulo de exibição, como sempre: trocar o rótulo não migra nada.
+
+
+## O que fica para adiante (atualizado em 25/08/2026 — depois da F-3)
+
+**✅ F-3 — FEITA, as cinco partes.** O calendário com as duas naturezas
+(**DEC-055**), a decisão de fuso (**data de calendário não é instante**), a
+DEC-053 estendida a `Event` com o primeiro pai opcional da árvore, a tela com
+duas vistas (agenda por padrão em 360 px), o sino sem estado de lido, e a linha
+do tempo do processo (**DEC-056**). O seed ganhou nove eventos, com as datas
+calculadas na semeadura para não envelhecer.
+
+**A próxima é a F-4** — dashboard com ações e autocomplete com as tabelas de
+domínio do Davi (entregues em 23/08/2026, com a ressalva do CNJ registrada).
+Depois a **F-5 (offline)**, que vem por último de propósito: com os dados em
+IndexedDB e numa fila de saída, **toda entidade nova custa dobrado** — e a F-3
+acabou de criar uma.
+
+**Suítes na F-3:** backend **730** testes (+96, os novos em `tests/calendar/` —
+`evento`, `fuso`, `dec055`, `dec056`, `hierarquia` e `sino`), frontend **770**
+(+144). Zero skip, zero todo nos dois.
+
+### O que espera a LAÍS — a lista carregada para a frente
+
+Esta lista **não** fica só no registro da fase que a criou: ela é relida a cada
+fase, e por isso é repetida aqui inteira. Uma pendência que só existe dentro do
+registro de uma fase antiga é uma pendência que a próxima fase não lê.
+
+- **DEC-039** — o enum de tipo de honorário. `custas` pode não ser honorário;
+  `sucumbência` pode ser um tipo que falta. **E o diagnóstico do "êxito"**;
+- **DEC-041 / DEC-042**;
+- **a assimetria do recibo parcial**;
+- **DEC-048** — o "Parcela 1 de 3";
+- **a sobra da divisão na primeira parcela** — R$ 1.000,00 em 3 vira
+  333,34 + 333,33 + 333,33;
+- **DEC-054** — o nome da primeira fase ("fase inicial" ou "fase de
+  conhecimento"?), e se falta alguma fase que ela não citou;
+- **os TIPOS DE EVENTO (novo na F-3)** — `audiencia`, `prazo`, `reuniao`,
+  `outro`. Saíram do enunciado da fase, **não dela**. Ver "Tipos de evento —
+  PROVISÓRIOS", acima. Perícia, diligência e despacho são candidatos óbvios, e
+  nenhum entrou: adivinhar o vocabulário e migrar dado depois é o que não se
+  faz.
+
+---
+
+## O que ficava para adiante (registro da F-2d, 24/08/2026)
+
+**Saíram da lista da F-1b.3 porque a F-1b.2 os fez:** o badge "estornado
+integralmente", a coluna de honorário legível e **moeda que nunca trunca** —
+esta última agora vale nas sete listagens, com teste que falha se qualquer
+célula juntar `cell-num` e `cell-truncate`.
+
+**✅ F-1c — FEITA, nas duas metades.** A F-1c.1 trouxe a **DEC-048** ("Parcela 1
+de 3": o plano vigente renumera, o "de N" é congelado por `planoId`); a F-1c.2
+trouxe a **DEC-049** — a tela do reparcelamento, em **rota dedicada** e não
+modal, porque o plano tem N linhas e uma soma corrente que precisa ficar
+visível. O botão desabilitado da página do honorário **ligou**.
+
+**O ciclo Financeiro 2.0 fecha aqui**, da DEC-032 à DEC-049. A seção **28** do
+roteiro do frontend é a travessia de encerramento: honorário vazio → parcelas →
+pagamento → alocação → estorno → anulação → reparcelamento → recibo → extrato,
+numa sentada só, provando que **os números fecham entre si** depois da cadeia —
+que é o que nenhum passo isolado prova.
+
+**✅ F-2a — FEITA.** O **V-2** morreu: a **DEC-050** reservou o 401 a sessão
+ausente ou inválida, e a senha atual errada passou a 422 — a advogada não é mais
+expulsa por um erro de digitação. Junto vieram a **DEC-051** (as gerações de
+parcelas agrupadas, o plano vigente primeiro), a coluna do rótulo que parou de
+exibir "Parce…", e o **seed que grava o plano inteiro** — a migração deixou de
+ser pré-condição de todo reset.
+
+**A próxima fase é a F-2b**, e o que ela tem depende de gente:
+
+- **status do processo — BLOQUEADO pelo vocabulário da Laís.** Não se inventa
+  enum que ela vai trocar: os valores viram dado gravado, tela, filtro e
+  histórico de→para, e trocá-los depois é migração em quatro lugares. **As sete
+  perguntas já estão com o Daniel.** Enquanto não voltarem, a F-2b não começa
+  pelo status.
+- **cor por status** e **histórico de→para**, que dependem do mesmo vocabulário.
+- **✅ RESOLVIDO na F-2b — reativação de cliente e de processo** (achado B2).
+  O que travava era a cascata perdida, e a saída foi **registrar em vez de
+  inferir**: ver a **DEC-052**, acima.
+
+  **O achado, guardado para registro:** a cascata de desativação de processo
+  gravava o mesmo `ativo: false` que a remoção manual de um participante, e
+  depois do fato nada os distinguia. Reativar ou ressuscitava gente removida de
+  propósito, ou devolvia um processo vazio. A correção foi a cascata **marcar**
+  o que derrubou (`desativadoPorCascataDe`), e a reativação restaurar só isso.
+
+  Junto vieram as três coisas que faltavam para a reativação existir de fato: o
+  `historicoAtivacao` em `Process` e `Client` (que não tinham histórico
+  nenhum), o filtro `situacao` nas listagens (que escondiam os desativados sem
+  alternativa) e as rotas de reativação.
+
+- **✅ RESOLVIDO na F-2b — comandos destrutivos sem guarda.** `seed:fresh`,
+  `seed:demo:clean` e a migração agora INTERROMPEM e pedem confirmação contra
+  banco não-local, dizendo o nome do banco. Ver "Guarda dos comandos
+  destrutivos".
+
+- **✅ RESOLVIDO na F-2b — passo 85 / rate limit.** O teto por ambiente já
+  existia e estava certo; o passo é **pré-voo**, não código a escrever. O que a
+  F-2b fez foi tirar a duplicação entre os dois arquivos de rota e separar
+  `test` de `development`, que compartilhavam um teto perto demais do que a
+  suíte consome.
+
+- **✅ RESOLVIDO na F-2d — o vocabulário da Laís chegou (23/08/2026).** Ele era
+  o que travava o módulo de Processos desde a F-2b, e a resposta dela mudou a
+  pergunta: **não era um status, eram dois eixos.** Ver a **DEC-054**.
+
+  A previsão desta seção estava metade certa e metade errada, e a diferença
+  importa: o **histórico `de → para` separado do `historicoAtivacao`** era o
+  ponto já decidido, e continua valendo — é o `historicoFase`. O que não se
+  previa é que "trânsito em julgado" **não caberia na mesma lista** das fases,
+  e que a **cor por status** viraria um **selo de liminar**, que é outra coisa:
+  liminar é sinalizador, não estado.
+
+- **✅ RESOLVIDO na F-2d — a lacuna de Documento na DEC-053** (achado do passo
+  204). A recusa existia; a mensagem é que era a errada. Ver "A DEC-053 alcança
+  Documento".
+
+- **✅ LEVANTADO e MANTIDO na F-2d — a rigidez de `deleteClient`** (relato do
+  passo 201). O veredito é que ela é exigida pela invariante da DEC-053; o que
+  mudou foi a mensagem saber dizer o caminho. Ver "A rigidez de `deleteClient`
+  é INTENCIONAL".
+
+**Duas regras de negócio da F-1c.2 precisam da Laís**, porque são combinação com
+cliente e não decisão técnica: a **sobra da divisão na primeira parcela**
+(R$ 1.000,00 em 3 vira 333,34 + 333,33 + 333,33) e o **"Parcela 1 de 3"** da
+DEC-048.
+
+**Três coisas novas entraram na lista de ratificação na F-2d:**
+
+1. **o nome da primeira fase** — "fase inicial" ou "fase de conhecimento"? Ela
+   deu as duas. Adotada a segunda; trocar é mudar um rótulo, sem migração;
+2. **falta alguma fase** que ela não citou? Foram quatro, e não inventamos uma
+   quinta;
+3. **"pagamento no êxito" e "cliente inadimplente"** — diagnosticados, **não
+   implementados**. Ver "DIAGNÓSTICO (F-2d)". O primeiro pede um eixo novo no
+   honorário (e mexe na DEC-039, congelada); o segundo é consulta derivada e
+   não deve virar campo. **A decisão é do Daniel com a Laís.**
+
+**A próxima fase é a F-2e: a LINHA DO TEMPO do processo**, que a Laís pediu
+(*"finalizado por etapa — fazer linha do tempo"*), construída sobre o
+`historicoFase` que a F-2d passou a gravar. Ela já tem substrato — foi por isso
+que a gravação começou antes da tela.
+
+**Continua sem lint.** `node --check` é o que existe hoje; ESLint viola "zero
+dependência nova" e segue como **exceção nomeada a decidir na F-2**.
+
+**Concorrência de suítes.** Duas execuções simultâneas contra o mesmo
+`lex_test` se destroem pelos hooks de limpeza. Hoje a disciplina é rodar uma de
+cada vez; quando existir CI, precisa de trava.
+---
+
+## DEC-057 — o campo sugere e não obriga (F-4, só frontend)
+
+O backend **não foi tocado** nesta fase. A decisão fica registrada aqui porque o
+log de DEC é **compartilhado** e numerado em série pelos dois repos: quem
+procurar "DEC-057" a partir daqui precisa achar, e não concluir que o número foi
+pulado. A implementação e o detalhe estão no **CLAUDE.md do frontend**.
+
+Em uma frase: **o campo de autocomplete SUGERE, não OBRIGA** — valor fora da
+tabela é digitado e salvo —, **grava-se o TEXTO e não um código**, e as quatro
+tabelas de domínio são **estáticas no frontend**, carregadas sob demanda, fora do
+bundle principal.
+
+### O que isso significa PARA O BACKEND
+
+**Nada mudou, e é de propósito.**
+
+- **Nenhum campo novo, nenhuma migração, nenhum enum.** `comarca`, `tipoAcao`,
+  `area`, `profissao` e `nacionalidade` continuam sendo **texto livre** no
+  schema, exatamente como antes. A validação de nenhum deles passou a conferir
+  contra tabela — e **não deve passar**. Uma guarda no servidor recusando comarca
+  fora da lista desfaria a decisão inteira do lado errado, e sem que a tela
+  soubesse explicar o motivo.
+- **`Process` não ganhou campo `assunto`.** A fase pediu um, e mandou não tocar
+  no backend. O assunto do CNJ foi para o campo **`area`**, que já existia e
+  guarda a mesma coisa: os assuntos de primeiro nível do CNJ são literalmente
+  *"DIREITO TRIBUTÁRIO"*, *"DIREITO PREVIDENCIÁRIO"*, que é o que a advogada
+  digitava à mão como "Tributario". **Consequência:** `{{areaProcesso}}` passa a
+  renderizar texto do CNJ nos documentos gerados **daqui em diante**. Nada migra,
+  nada muda no que já está gravado.
+- **`nacionalidade` continua UM campo de texto**, com `default: "brasileira"` e
+  formatador `texto`. A tela passou a **sugerir** a flexão certa olhando o `sexo`
+  já cadastrado; a geração de documento **não flexiona nada**, como antes.
+  Transformar em dois campos, ou fazer `documentGenerationService` concordar
+  `nacionalidade` com `sexo`, é **mudança de modelo** — reportada, e não feita de
+  passagem. Se alguém for fazê-la um dia, o mesmo vale para `estadoCivil`
+  ("casado/casada"), que tem exatamente o mesmo problema e nunca foi resolvido.
+- **`GET /api/calendar/avisos` ganhou um segundo consumidor.** O painel passou a
+  ler dele a contagem de parcelas vencidas, que antes tirava de
+  `GET /api/financeiro/resumo` e de um filtro no cliente sobre
+  `GET /api/installments`. **Os dois números aparecem na mesma tela** — o sino no
+  cabeçalho, o painel no corpo — e a F-4 fechou o caminho para divergirem, do
+  lado do cliente.
+
+  ⚠️ **Do lado do servidor as consultas continuam DUAS**, escritas à mão em
+  serviços diferentes: `calendarService.lerCalendario` e
+  `dashboardService.getFinanceiroResumo`. As duas filtram pela mesma cadeia
+  (`Process.ativo` → `Fee.ativo && status ≠ cancelado` → `Installment.ativo`) e
+  leem o mesmo campo derivado (`status === "vencido"`, DEC-028) — mas por
+  **coincidência de duas consultas independentes**, e não por construção. **O dia
+  em que uma delas ganhar um recorte que a outra não tenha, os dois números
+  divergem de novo, e a trava do frontend não pega.** Unificá-las num único
+  leitor é trabalho de backend que esta fase não abriu, e fica anotado aqui como
+  o próximo passo natural dessa decisão.
+
+### O que NÃO fazer no backend por causa desta fase
+
+- Não servir as tabelas por rota (`GET /api/tabelas/...`). Elas são estáticas,
+  iguais para todo mundo, não dependem de `usuarioId`, e servi-las autenticadas
+  as tiraria do alcance do cache do service worker que a **F-5** vai querer.
+- Não criar enum, `ref` ou coleção a partir delas. São **sugestão**, não
+  vocabulário fechado — ao contrário de `tiposHonorario`, `fasesProcesso` e
+  `tiposEvento`, que são espelhados entre os dois repos justamente por serem
+  fechados.
+
+## DEC-058 — a leitura offline, escopada por usuário (F-5a, só frontend)
+
+O backend **não foi tocado** nesta fase. A decisão fica registrada aqui porque o
+log de DEC é **compartilhado** e numerado em série pelos dois repos: quem
+procurar "DEC-058" a partir daqui precisa achar, e não concluir que o número foi
+pulado. A implementação e o detalhe estão no **CLAUDE.md do frontend**.
+
+Em uma frase: **o app passou a guardar no IndexedDB o que a advogada já
+consultou**, para poder exibi-lo sem sinal — sempre **escopado pelo id do
+usuário**, apagado no logout e na troca de conta, e **sempre com a idade do dado
+visível**.
+
+### Por que isto interessa ao backend, mesmo sem uma linha mudada
+
+**Porque é a mesma regra que o `sw.js` já tinha, e ela nasceu de um raciocínio
+sobre respostas DESTE servidor.** Desde a Fase 4.5 nenhuma resposta de `/api/`
+entra no Cache Storage: toda resposta é autenticada e pertence a uma advogada,
+e um cache sem dono a entrega ao próximo usuário do mesmo navegador. IndexedDB
+é outra API com o mesmo risco — e a F-5a só passou a guardar porque pôs as três
+condições que faltavam:
+
+1. a chave carrega o **id do usuário** (e a montagem **lança** sem ele);
+2. o **logout apaga** o banco — não invalida, apaga;
+3. **entrar com outro id apaga o do anterior antes de escrever**.
+
+**Quem mexer no `sw.js` ou na política de cache precisa ler as duas coisas.**
+
+### O que isso significa PARA O BACKEND
+
+**Nada mudou, e é de propósito.**
+
+- **Nenhum schema, nenhum campo, nenhuma migração, nenhuma coleção.** O espelho
+  local é do navegador; o MongoDB não sabe que ele existe.
+- **Nenhuma rota nova, nenhum cabeçalho de cache.** Não há `ETag`, não há
+  `If-None-Match`, não há `Cache-Control` novo. O frontend decide sozinho o que
+  guardar e por quanto tempo, e a decisão de servir do espelho é dele: **com
+  sinal, a rede manda sempre.** Nenhuma resposta deste servidor é servida de
+  cache enquanto houver conexão.
+- **Nenhuma escrita offline.** Não há fila, não há `POST` guardado para depois,
+  não há idempotência a suportar. **Isso é a F-5b inteira** — e é ela que vai
+  precisar de decisão de backend de verdade: chave de idempotência por UUID,
+  reconciliação e o que fazer quando dois aparelhos divergirem.
+- **A `sanitizeUser` ficou sendo contrato de segurança.** O campo `id` que ela
+  expõe é o que escopa **todo** o espelho local. Renomeá-lo, omiti-lo ou
+  devolvê-lo diferente entre `/auth/login`, `/auth/register` e `/auth/me` faria
+  a chave mudar de dono — e no melhor caso o cache pararia de acertar, no pior
+  duas sessões se encontrariam. Os três envelopes já são o mesmo desde a Fase
+  2D.1; agora há uma segunda razão para continuarem.
+- **O portal ficou de fora, e continua de fora.** `GET /api/portal/*` não é
+  guardado em lugar nenhum: o portal roda no aparelho do cliente, que pode ser
+  emprestado (passo 93), e cache de dado jurídico ali é decisão de privacidade
+  que ninguém tomou.
+
+### O que NÃO fazer no backend por causa desta fase
+
+- **Não recusar leitura repetida** nem tentar detectar "cliente com cache". O
+  servidor continua respondendo a toda consulta; economizar viagem é decisão do
+  cliente e ele já a tomou.
+- **Não emitir dado a mais "já que vai ser guardado".** Guarda-se **o que passou
+  pela tela** — nunca o banco inteiro baixado por precaução. Uma listagem que
+  passasse a devolver mais do que a tela pede encheria o banco do navegador com
+  o que ninguém pediu.
+- **Não confiar no espelho para nada.** Ele é cópia de leitura, no aparelho, sem
+  garantia de atualidade. Toda regra de negócio continua onde sempre esteve.
+
+## DEC-059 e DEC-060 — idempotência e concorrência (F-5b)
+
+A F-5b é a escrita offline: o navegador guarda numa fila o que a advogada
+gravou sem sinal e reenvia quando o sinal volta. **Do lado de cá, isso exige
+duas garantias que só o servidor pode dar** — e é o que esta fase acrescentou.
+
+### DEC-059 — a mesma gravação, duas vezes, não cria duas
+
+**O caso não é o raro, é o comum:** a rede cai **depois** de o servidor gravar
+e **antes** de a resposta chegar. Para o aparelho a requisição falhou; para o
+banco ela aconteceu. A fila reenvia — e sem proteção a advogada acaba com duas
+audiências no mesmo horário sem nunca ter pedido a segunda.
+
+O cliente manda `Idempotency-Key: <uuid>`, gerado no clique. O middleware
+`middleware/idempotencyMiddleware.js`:
+
+1. **reserva** a chave (índice único `{usuarioId, chave}`) antes de executar;
+2. deixa a rota executar normalmente;
+3. guarda a resposta **de sucesso** junto da chave;
+4. na repetição, **devolve a mesma resposta sem executar**, com
+   `Idempotent-Replay: true`.
+
+**Por que cabeçalho, e não campo no corpo.** A chave é da requisição, não do
+registro — e, decisivo: `validations/shared/camposPermitidos.js` recusa campo
+desconhecido no corpo do PATCH. Um `chaveIdempotencia` no corpo seria rejeitado
+pela própria guarda que protege o contrato, ou obrigaria a abrir exceção nela.
+**Nenhum model, validador ou contrato de rota mudou nesta fase.**
+
+**Erro não é guardado.** Um 400 não é resultado a repetir: a advogada corrige e
+reenvia, e a correção precisa poder executar. A reserva é apagada quando a
+resposta não é 2xx.
+
+**A chave é conferida pela DATA**, e não pelo coletor do Mongo — o TTL passa a
+cada ~60s, e confiar nele faria a expiração depender de quando o servidor
+resolveu varrer.
+
+**A resposta só sai depois de a chave estar gravada.** São alguns
+milissegundos a mais, e é o que fecha a janela em que o cliente já recebeu o
+resultado e a chave ainda não existe — janela em que um reenvio duplicaria.
+
+### `idempotency_keys` — a única adição ao banco
+
+| Campo | O quê |
+|---|---|
+| `usuarioId` + `chave` | índice **único**: a chave é escopada por usuário, como todo o resto |
+| `operacao` | `"POST /api/events"` — recusa a chave **reutilizada** em outra operação |
+| `estado` | `emAndamento` (a reserva) ou `concluida` |
+| `respostaStatus` / `respostaCorpo` | o que se devolve na repetição |
+| `expiraEm` | TTL de **30 dias** (`expireAfterSeconds: 0`) |
+
+**Sem armazenamento no servidor não há idempotência**: resolver no cliente
+confiaria a garantia justamente a quem perdeu a conexão — o aparelho não tem
+como saber se o que ele mandou chegou. Idempotência é promessa de quem recebe.
+
+30 dias porque sem expiração a coleção cresce para sempre, e com prazo curto
+uma fila que passou dias sem sinal voltaria a duplicar.
+
+**Onde o middleware está ligado:** `POST /events`, `PATCH /events/:id`,
+`PATCH /events/:id/concluir` e `PATCH /processes/:id/fase` — as quatro
+operações que a fila envia, e nenhuma outra. **Requisição sem o cabeçalho passa
+direto**, e nada mudou para quem grava online.
+
+### DEC-060 — a gravação atrasada não atropela a de outro aparelho
+
+Dois aparelhos, um offline. O que ficou sem sinal envia horas depois, com uma
+versão mais **velha** que a gravada. O cliente manda em `X-If-Unmodified-Since`
+o `updatedAt` que ele viu; se o registro mudou desde então, o servidor **recusa
+com 409** e devolve o estado atual no corpo (`regra: "conflitoDeVersao"`,
+`errors.atual`).
+
+**Não sobrescreve, não mescla, não decide.** Duas versões de um mesmo
+compromisso é conflito de **conteúdo**, e conteúdo é da advogada — a escolha
+acontece na tela de pendências, com as duas à vista.
+
+Três detalhes que são a decisão:
+
+- **não é o `If-Unmodified-Since` do HTTP**: aquele carrega HTTP-date, com
+  precisão de **segundos**, e duas edições no mesmo segundo passariam pela
+  verificação — que é justamente a janela a fechar;
+- **é IGUALDADE, e não "mais novo que"**: a pergunta é *"o registro ainda é o
+  que eu vi?"*, e qualquer diferença responde não;
+- **na mudança de fase, a guarda vem ANTES do `$set`/`$push`**: uma gravação
+  atrasada não pode empurrar para o `historicoFase` uma transição que parte de
+  uma fase que já não é a atual. Dado errado é ruim; histórico errado é pior,
+  porque é o que a linha do tempo lê.
+
+O corpo do 409 carrega o estado atual para a tela de pendências **não precisar
+sair buscando o registro logo depois de uma falha de rede** — o pior momento
+possível para depender de mais uma requisição.
+
+### O que o backend NÃO faz por causa desta fase
+
+- **Não conhece a fila.** Ele não sabe se a requisição veio de agora ou de uma
+  fila de ontem, e não deve saber: o que ele garante é a idempotência e a
+  recusa do conflito, e as duas valem igual para os dois casos.
+- **Não resolve conflito.** Não há merge, não há "o mais recente ganha", não há
+  campo de versão inventado. `updatedAt` já existia.
+- **Não guarda o corpo da requisição**, só o da resposta de sucesso.
+- **Não expõe a coleção de chaves em rota nenhuma.** Ela é infraestrutura.
+
+## DEC-061 — o deploy: dois serviços, uma origem só (D-1)
+
+> Fase de **infraestrutura**. Nenhum comportamento do sistema mudou; o que
+> mudou é ele conseguir rodar fora do `localhost`. O detalhe do lado da tela
+> está no **CLAUDE.md do frontend**, junto do `render.yaml` e do guia do README.
+
+**Render, plano gratuito.** A API é um **Web Service** (`npm ci` / `npm start`,
+health check em `/`); o site é um **Static Site**. O banco continua no **Atlas**,
+com `0.0.0.0/0` no IP Access List — o plano gratuito do Render não tem IP de
+saída fixo.
+
+O site serve `/api/*` **no próprio domínio**, por rewrite. Para o navegador,
+tudo acontece numa origem só: **não há CORS**, e o cookie `lex-token` continua
+sendo cookie de mesma origem, com o `sameSite: "strict"` que ele já tinha em
+produção. **Nada da autenticação mudou nesta fase** — e a razão de não mudar é
+que dois domínios exigiriam `SameSite=None; Secure`, que parte dos navegadores e
+dos bloqueadores recusa de formas que só aparecem no aparelho de outra pessoa.
+
+### `trust proxy: 1` — e por que não `true`
+
+Já estava no `app.js` desde a Fase 4.5; o que a D-1 acrescentou foi a **prova de
+comportamento**, e não só a de configuração.
+
+Atrás do proxy do Render, todo request chega com o mesmo IP. Sem `trust proxy`,
+o `express-rate-limit` conta o mundo inteiro como uma pessoa só e o limite
+estoura com pouquíssimo uso — o **passo 85** quebrando de um jeito que ninguém
+percebe, com a demonstração morrendo em 429 e a causa em lugar nenhum do código
+de negócio.
+
+**`1` e não `true`:** com `true`, o Express acredita no `X-Forwarded-For`
+inteiro, inclusive no trecho que o **cliente** escreve. Quem quisesse furar o
+limite trocaria o prefixo forjado a cada requisição e ganharia um balde novo
+toda vez.
+
+`tests/infra/producao.test.js` prova as duas coisas:
+
+| Teste | O que morre se `trust proxy` virar `true` |
+|---|---|
+| o valor configurado é `1` | a asserção direta |
+| **prefixo forjado não cria balde novo** | o comportamento: com `true`, cada prefixo forjado vira um balde |
+
+### `.env.production.example` — e o teste que o mantém honesto
+
+O modelo lista **todas** as variáveis que o código lê, com o que cada uma faz e
+**nenhum valor real**. `tests/infra/deploy.test.js` varre `src/` atrás de
+`process.env.X` e reprova se alguma não estiver mencionada: uma variável nova
+lida pelo código e ausente do modelo produz um deploy que **sobe** e falha em
+uso — a categoria mais cara, porque não há erro de build para investigar.
+
+O mesmo teste recusa valor com cara de real (URI com senha, hex longo): a fase
+mexe justamente nos arquivos que carregam segredo, e um valor commitado exige
+**rotação**, porque histórico publicado não se reescreve.
+
+Três coisas que quebram o deploy e estão escritas lá:
+
+- **`NODE_ENV=production`** liga o cookie `secure`, o HSTS (passo 142), o rate
+  limit real (passo 85) e o log de 5xx. Sem ele o sistema sobe "funcionando" e
+  sem nenhuma dessas proteções;
+- **`JWT_PORTAL_SECRET` diferente do `JWT_SECRET`** — a aplicação se recusa a
+  subir se forem iguais (`config/portalSecret.js`);
+- **`PORT` não se configura.** O Render injeta; fixá-la faz o health check nunca
+  passar, e o deploy fica em "in progress" sem mensagem de erro.
+
+### `engines.node` — a versão é nossa, não do hospedeiro
+
+`">=20.0.0 <21.0.0"`. Sem declarar, o Render usa o default **dele** — hoje a
+série 24 —, e a API rodaria numa versão que a suíte nunca tocou. O teto é
+exigência explícita da documentação do Render: faixa aberta resolve para o
+`latest`, que muda de major sozinho.
+
+### A hibernação do plano gratuito
+
+O Web Service gratuito **dorme após 15 minutos** sem requisição e leva **cerca
+de um minuto** para acordar. O site estático não dorme — quem dorme é a API, e
+o sintoma é o app abrir normal e a primeira consulta demorar.
+
+**Antes de qualquer demonstração, abrir o sistema alguns minutos antes.** É
+pré-voo, como o passo 85: não é defeito, é o plano — e o que não pode acontecer
+é a banca ser a primeira vez que alguém vê.
+
+## DEC-062 — ordem alfabética em português (A-1)
+
+**A regra, em uma frase:** *a listagem de clientes sai em ordem alfabética por
+padrão, e a ordenação é feita em PORTUGUÊS — acento e caixa não mudam o lugar
+do nome.*
+
+### O problema que precisava ser resolvido ANTES de escrever a consulta
+
+**Cliente PF e cliente PJ não guardam o nome no mesmo campo.** PF tem
+`nomeCompleto`; PJ tem `razaoSocial` e `nomeFantasia`. Ordenar por um só deixa
+o outro tipo inteiro com chave vazia — e, na prática, todos os PJ num bloco, no
+começo ou no fim, ordenados por data de cadastro.
+
+### A escolha: campo DERIVADO e gravado, não derivado na consulta
+
+`Client.nomeExibicao`, gravado pelo hook `pre("validate")` a partir de
+`utils/nomeExibicao.js`.
+
+As duas saídas eram defensáveis e a decisão tem motivo:
+
+| Saída | Por quê / por que não |
+|---|---|
+| **campo gravado** (escolhida) | rápido na leitura, e **indexável** |
+| campo derivado na consulta (`$addFields` numa agregação) | não duplica dado, e **nenhum índice o alcança** — a ordenação passaria a acontecer em memória **por construção**, sem escolha |
+
+O argumento que decidiu não foi o custo: foi que a segunda saída **tira a
+decisão sobre o índice das nossas mãos**. Com `$addFields`, "ordenar em memória"
+deixa de ser uma escolha declarada e vira uma consequência inevitável.
+
+**O risco do campo gravado é a divergência, e ele é eliminado
+estruturalmente** — não por disciplina:
+
+- o valor é **derivado por hook `pre("validate")`**, como `Secao.variaveis`
+  desde a Fase 2A;
+- **toda escrita de cliente passa por `.save()`** (regra central nº 6), então
+  não há caminho que pule o hook;
+- o campo **não está em allowlist nenhuma** de PATCH, então nenhuma rota o
+  aceita — há teste provando que `PATCH { nomeExibicao }` responde 400 e que o
+  valor gravado continua o derivado;
+- a derivação acontece **depois** da limpeza de campos do tipo errado, dentro do
+  mesmo hook. Derivar antes leria um nome que a gravação vai descartar, e um
+  cliente que mudasse de PF para PJ ficaria ordenado para sempre pelo nome de
+  pessoa física que ele deixou de ter.
+
+**A precedência (`nomeCompleto` → `razaoSocial` → `nomeFantasia`) mora em
+`utils/nomeExibicao.js`, e é a MESMA que `nomeDoCliente` usa** para nomear o pai
+inativo nas mensagens da DEC-053. Antes da A-1 eram duas listas escritas à mão,
+e divergir ali significaria a mensagem de erro chamar o cliente de um jeito e a
+listagem ordená-lo por outro.
+
+**Vazio, e não `"(sem nome)"`.** O `"(sem nome)"` é decisão de exibição e fica em
+`nomeDoCliente`; como chave de ordenação, ele colocaria esses clientes no meio
+da letra P, como se fosse um nome.
+
+### A collation é `pt`, `strength: 1` — e foi MEDIDA, não presumida
+
+Sonda contra o Atlas, antes de escolher:
+
+```
+sem collation : Alvaro < Ambar < Ana < Zeca < Álvaro < ámbar
+pt strength 1 : Álvaro < Alvaro < ámbar < Ambar < Ana < Zeca
+pt strength 2 : Alvaro < Álvaro < Ambar < ámbar < Ana < Zeca
+pt strength 3 : Alvaro < Álvaro < Ambar < ámbar < Ana < Zeca
+```
+
+**Sem collation, todo nome acentuado vai para depois do "Z".** A ordenação
+binária compara bytes, e em UTF-8 qualquer caractere acentuado tem byte maior
+que qualquer letra sem acento. Num cadastro brasileiro isso não é caso de borda:
+é metade dos nomes, e a advogada procuraria "Álvaro" na letra A, não acharia, e
+concluiria que o cliente não está cadastrado.
+
+**`strength: 1` compara só a letra base**: ignora acento **e caixa**. É o que faz
+"Álvaro", "Alvaro" e "alvaro" ficarem adjacentes — que é como um humano lê a
+lista. `strength: 2` também resolveria o acento e deixaria os três adjacentes;
+a diferença é a caixa, e nomes digitados em minúscula existem no cadastro real.
+
+**O preço do `strength: 1` está registrado:** "Álvaro" e "Alvaro" ficam
+**empatados**, e empate não ordena. Quem desempata é o **`_id`** na consulta —
+sem ele, a paginação **repete e pula linhas**, que é a mesma correção que o
+extrato levou na F-1a.
+
+### 🚨 A collation vale nos DOIS lados, ou em nenhum
+
+```js
+// models/Client.js
+export const COLLATION_PT = Object.freeze({ locale: "pt", strength: 1 });
+clientSchema.index({ usuarioId: 1, nomeExibicao: 1, _id: 1 }, { collation: COLLATION_PT });
+
+// services/clientService.js
+Client.find(filter).collation(COLLATION_PT).sort({ nomeExibicao: dir, _id: dir })
+```
+
+**Um índice sem collation não serve a uma consulta com collation** — o MongoDB
+o ignora e ordena em memória. E collation só no índice não se aplica à consulta.
+Medido com `explain("queryPlanner")`:
+
+| | IXSCAN | estágio SORT |
+|---|---|---|
+| **com** collation nos dois lados | sim, `usuarioId_1_nomeExibicao_1__id_1` | **não** |
+| sem collation na consulta (contraprova) | sim, outro índice | **sim** |
+
+**A ordenação é servida pelo índice, e não acontece em memória.** Era a pergunta
+que a fase mandou responder, e a resposta é medida.
+
+### O vocabulário é fechado, e `ordem` inválida RECUSA
+
+`ORDENACOES_CLIENTE = ["nome_asc", "nome_desc"]`, em `utils/filtrosDeConsulta.js`,
+ao lado de `SITUACOES`. Sem lista, em duas fases existiriam `nome_asc`, `nomeAsc`
+e `asc` como valores possíveis.
+
+Valor desconhecido → **400 com `campo: "ordem"`**, como `situacao` e como o id
+malformado da F-0. Um `?ordem=alfabetica` ignorado devolveria a lista em outra
+ordem sem nada dizendo isso, e a advogada concluiria que a ordenação não
+funciona. **Filtro que erra calado é pior que filtro que recusa** — e a
+assimetria com `?busca=` (que é descartado) continua valendo pelo mesmo motivo:
+aqui quem montou a URL foi a tela.
+
+### A migração, e por que ela é necessária
+
+`scripts/migrarNomeExibicao.js` (`npm run migrar:nome-exibicao`). Hook só roda em
+gravação, então cliente cadastrado antes da A-1 e nunca editado fica com
+`nomeExibicao` ausente — e ausente ordena **antes de qualquer nome**, em bloco.
+
+O sintoma é o pior possível: a lista **parece funcionar** (os editados
+recentemente saem em ordem) e mente sobre o resto. Idempotente, com a guarda de
+banco da F-2b, e **recalcula todos** em vez de filtrar por "campo ausente" — assim
+ele também corrige um valor que tenha divergido por qualquer caminho.
+
+**`npm run seed:fresh` não dispensa o script**, e pela mesma razão pela qual
+`migrarTotalParcelas.js` continua no repositório: o seed cobre o banco de
+demonstração e mais nenhum.
+
+### O padrão MUDOU, e é deliberado
+
+Era `createdAt: -1`. Passa a ser `nome_asc`. Ordem de cadastro não responde
+nenhuma pergunta de quem procura um nome — e quem não mexer no seletor vê a
+lista em ordem alfabética, que foi o que o Daniel pediu.
+
+**Só a listagem de CLIENTES.** Processos, honorários e documentos não foram
+tocados: replicar é decisão do Daniel, depois de ver esta funcionando.
+
+---
+
+## DEC-063 — validação de e-mail, e a assimetria entre cadastro e login (A-1)
+
+> **A segunda metade desta decisão é a que mais precisa estar escrita.** Sem
+> ela, alguém "corrige" a inconsistência por reflexo e reabre um buraco.
+
+### O que a fase ENCONTROU, e não era o que o enunciado supunha
+
+O enunciado dizia que não havia validação nenhuma. **Havia**, e o levantamento
+foi colado no relatório:
+
+| Onde | Antes da A-1 |
+|---|---|
+| `validations/authValidation.js` (cadastro) | **validava**, com expressão escrita à mão |
+| `pages/auth/RegisterPage.jsx` (frontend) | **validava**, com uma **CÓPIA** da mesma expressão |
+| `validateLoginPayload` (login) | só campo vazio — **e está certo assim** |
+| `clientValidation.js` (cliente) | nada |
+
+**As duas cópias tinham o mesmo furo, e ele era de um caso só:**
+
+```js
+/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test("daniel@lex..dev")   // → true
+```
+
+`[^\s@]+` engole o primeiro ponto e o `\.` casa com o segundo. Dos onze casos
+da tabela da fase, a expressão acertava **dez**.
+
+### A regra, deliberadamente simples
+
+`utils/email.js`. Um `@`, algo antes, um ponto depois com algo dos dois lados,
+sem espaços, **sem dois pontos seguidos**.
+
+**A proibição de ponto duplo fica FORA da expressão**, como um teste separado.
+É o que a torna legível e verificável — e foi exatamente o que a versão
+"tudo numa regex" não conseguia expressar.
+
+**Não se tenta a gramática do RFC 5322**, e o motivo é o custo assimétrico do
+erro:
+
+- aceitar um endereço inválido → a advogada recebe "não foi entregue" e corrige;
+- **recusar um endereço VÁLIDO** → a pessoa não se cadastra, não entende por
+  quê, e não tem a quem recorrer.
+
+O segundo é muito pior, e é o que as expressões "completas" produzem na prática.
+**O sinal de mais é aceito de propósito** (`daniel+banca@lex.dev`): é endereço
+válido, é usado, e recusá-lo cairia no erro caro.
+
+É a mesma direção da regra geral do projeto desde a F-3.2 — *a tela nunca é mais
+rígida que a API* —, nascida do código de acesso do portal.
+
+### Normalização: já estava correta, e passou a ter um dono
+
+`trim` + caixa baixa, **antes de gravar e antes de comparar**. O levantamento
+confirmou que o cadastro e o login já faziam isso (`.toLowerCase().trim()`
+inline nos dois), e que `User.email` tem `lowercase: true`.
+
+**Não havia defeito, e portanto não houve script de duplicatas** — a pergunta da
+fase era condicional e a condição não se realizou. O que mudou é que as duas
+cópias inline passaram a chamar `normalizarEmail`.
+
+⚠️ **O `lowercase: true` do schema NÃO bastaria sozinho:** ele atua na escrita,
+não no `findOne`. Sem normalizar antes da consulta, quem se cadastrou como
+`daniel@x.com` e digitasse `Daniel@X.com` no login não seria encontrado. Há
+teste para os dois lados.
+
+### No cadastro: 400 com `campo: "email"`
+
+O 400 não carregava `campo`. Sem ele, quem erra o e-mail na **etapa 1** do
+assistente lê a mensagem na **etapa 2** e não sabe para onde voltar — é a outra
+metade do achado **V-1**.
+
+`CAMPO_POR_MENSAGEM`, em `authService.js`, é um mapa **curto e fechado**, por
+igualdade contra as constantes que a própria validação usa. **Não é regex sobre a
+mensagem** — foi assim que a Fase 1.3 quebrou, roteando a etapa por `/mail/i`.
+
+### 🚨 No LOGIN o formato NÃO é validado, e isso é decisão de segurança
+
+**Não acrescente `emailValido()` a `validateLoginPayload`.**
+
+`loginUser` responde **401 "Credenciais inválidas"** para e-mail inexistente e
+para senha errada, com corpo **byte-idêntico**, de propósito: é o que impede
+enumerar contas. Os passos 7 e 87 travam isso, e a DEC-029 ponto 11 aplica a
+mesma regra ao portal.
+
+Validar formato ali criaria uma resposta de **400 que só um e-mail malformado
+recebe**:
+
+```
+"daniel@lex.dev"    + senha errada → 401 "Credenciais inválidas"
+"naoexiste@lex.dev" + qualquer     → 401 "Credenciais inválidas"
+"daniel"                           → 400 "E-mail inválido"     ← o oráculo
+```
+
+As duas primeiras continuam indistinguíveis; a **terceira** separa "recusei
+antes de olhar o banco" de "olhei o banco". É pouco, e é exatamente o tipo de
+pouco que a **DEC-031** registra como aceitável no **cadastro** (onde qualquer
+um cria conta em dez segundos) e inaceitável no **login**.
+
+**Onde a validação do login mora, então: na TELA, e só lá.** `LoginPage.jsx`
+confere antes de enviar — conveniência pura, que poupa uma requisição. Quem
+contornar a tela recebe o mesmo 401 de sempre.
+
+**E isso não contradiz "a tela nunca é mais rígida que a API":** a tela aqui não
+recusa o que o servidor aceitaria — o servidor também não vai autenticar
+"daniel". Ela só evita a viagem.
+
+O e-mail **vazio** continua 400, e é a fronteira exata: string vazia não é
+endereço de conta possível, então não distingue conta nenhuma.
+
+### O cliente continua SEM validação de e-mail — e é pergunta ao Daniel
+
+`clientValidation.js` não valida, e a A-1 **não mexeu nisso de propósito**.
+Está fora do pedido, e aplicar a regra a um campo que hoje aceita qualquer coisa
+**recusaria dado que a advogada já tem gravado** — a primeira edição de um
+cliente com e-mail torto passaria a falhar, num cadastro que nada tem a ver com
+a mudança. A pergunta está no relatório da fase.
+
+---
+
+## DEC-064 — confirmação de e-mail e recuperação de senha da advogada (A-2)
+
+> **A DEC-031 continua valendo.** O cadastro segue aberto e o 409 de e-mail
+> duplicado segue enumerável — esta decisão NÃO o altera. A DEC-031 dizia que a
+> alternativa anti-enumeração "exigiria provedor de e-mail"; agora há provedor,
+> e mesmo assim o cadastro não mudou, porque o login continua livre (ver abaixo)
+> e a razão original — qualquer um cria conta em dez segundos — não se moveu.
+
+### O que existe
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `POST /auth/confirm-email` | público | consome o link do e-mail de cadastro |
+| `POST /auth/resend-confirmation` | logada | novo e-mail de confirmação; 1 por minuto |
+| `POST /auth/forgot-password` | público | pede o link de recuperação; **sempre o mesmo 200** |
+| `POST /auth/reset-password` | público | troca a senha com o link e derruba as sessões |
+
+Nenhuma emite cookie: **confirmar ou redefinir não abre sessão.** Quem redefine
+volta ao login e digita a senha nova — o link, sozinho, nunca é credencial.
+
+### Duas decisões do Daniel, e o que cada uma custou
+
+1. **Envio por provedor HTTP, com o `fetch` do Node** — zero dependência nova. A
+   alternativa (SMTP com biblioteca) exigia dependência e o plano gratuito do
+   Render costuma bloquear a saída SMTP. O provedor **não foi escolhido**: há
+   dois adaptadores (`brevo`, `resend`) atrás de `EMAIL_PROVIDER`, e trocar é
+   mudar uma variável no painel. **Resend só entrega a terceiros com domínio
+   próprio verificado**; Brevo aceita um remetente único verificado. O formato
+   de cada requisição foi escrito da documentação pública e **nunca foi
+   exercitado contra a API real** — o primeiro envio real é o passo 267.
+2. **O login NÃO é bloqueado até confirmar o e-mail.** Por causa da demonstração:
+   se o e-mail atrasar ou cair no spam, o avaliador entra do mesmo jeito. A
+   consequência é um aviso na tela (`emailConfirmadoEm: null`), não um portão. Há
+   teste nos dois repos travando que nada além do aviso consulta o campo.
+
+### O token
+
+`<idDoUsuário>.<segredo>`, com o segredo de 32 bytes aleatórios. **No banco fica
+só o SHA-256 do segredo** (`utils/tokenUsuario.js`): quem ler a coleção `users`
+não monta um link válido. Dois campos independentes em `User`
+(`confirmacaoEmail`, `recuperacaoSenha`), ambos `select: false` — o
+`authMiddleware` carrega o usuário em TODA requisição e não pode trazer hash de
+token junto. Pedir de novo SUBSTITUI o token anterior, e é isso que invalida o
+link velho.
+
+**Prazos:** confirmação 24 horas; recuperação 60 minutos. **Intervalo mínimo:**
+um e-mail por minuto por conta e por finalidade.
+
+### 🚨 Expiração e uso único vivem NUM lugar só
+
+`consumirToken` (`authService.js`) faz **uma escrita atômica** com o hash E
+`expiraEm > agora` dentro do FILTRO, e ela mesma aplica o efeito e apaga o token.
+Daí saem, de uma vez: uso único (duas requisições simultâneas com o mesmo link —
+só uma encontra o token) e expiração (um `if` antes da escrita seria uma segunda
+checagem, e é a segunda checagem que fica desatualizada). O que vem depois de
+`modifiedCount: 0` é **só diagnóstico**, para a tela separar "expirou"
+(`codigo: "tokenExpirado"`) de "inválido ou já usado" (`"tokenInvalido"`).
+
+**Mutação obrigatória:** tirar `expiraEm` desse filtro derruba 2 testes (o de
+confirmação e o de redefinição expirados).
+
+### 🚨 A recuperação responde IGUAL, aconteça o que acontecer
+
+Conta existe, não existe, envio deu certo, falhou, pedido caiu no intervalo de
+espera: **200 e `MENSAGEM_RECUPERACAO`**, uma constante. É a regra do login
+(DEC-063) aplicada aqui — o login esconde a existência da conta por 401
+idêntico, esta rota a esconde por 200 idêntico.
+
+- **O formato do e-mail NÃO é validado no servidor**, pelo mesmo motivo do login.
+  A tela confere (conveniência); o servidor responde igual. Só a FORMA do corpo
+  (campo ausente ou não-texto) é 400, e isso não é pergunta sobre conta.
+- **O envio corre em segundo plano**, para o TEMPO da resposta também não
+  distinguir. Resta uma escrita só no caminho da conta que existe — milissegundos,
+  e a rota tem limite por IP (`RATE_LIMIT_RECUPERACAO`, 5 / 15 min).
+- **O `catch` de `forgotPassword` engole toda falha** (banco, provedor) e devolve
+  a mesma resposta. Ele é uma SEGUNDA camada da uniformidade — e por isso a
+  mutação que só lança um erro dentro do `try` não derruba teste nenhum. A que
+  derruba muda a RESPOSTA quando a conta não existe (medido: 1 teste cai).
+
+**A confirmação, ao contrário, é honesta**: `resend-confirmation` exige sessão —
+a advogada pede e-mail para a PRÓPRIA conta, então não há o que esconder — e diz
+"já confirmado", "aguarde" e "falha do provedor" (502).
+
+### Encerrar as sessões ativas, num JWT sem estado
+
+`User.senhaAlteradaEm`, escrito só pela redefinição. O `authMiddleware` recusa
+(401, como toda sessão perdida — DEC-050) o token cujo `iat` é anterior ao
+SEGUNDO INTEIRO desse instante: `iat` tem resolução de segundos, e comparar com
+o instante exato derrubaria o login feito logo depois da redefinição, no mesmo
+segundo. **A troca DENTRO da sessão (`alterar-senha`) não escreve esse campo** —
+a advogada que trocou a própria senha continua logada (DEC-050) — mas apaga um
+pedido de recuperação pendente: um link anterior à troca não pode redefinir por
+cima da senha que ela acabou de escolher.
+
+### Três armadilhas, todas com teste
+
+- **`$literal` no hash.** A redefinição é UMA atualização por pipeline (senha,
+  `senhaAlteradaEm`, `emailConfirmadoEm` só se ainda nulo, e o apagamento dos
+  tokens). Um hash bcrypt começa com `$`, e numa expressão de agregação uma string
+  assim é lida como CAMINHO DE CAMPO: sem `$literal` a senha é corrompida. Sem
+  ele, 5 testes caem.
+- **A base dos links é `APP_URL`, nunca o `Host` da requisição.** Com `Host`, quem
+  pede a recuperação de uma conta alheia com `Host: site-do-atacante.com` faz o
+  link legítimo chegar à vítima apontando para o site dele. Em produção, sem
+  `APP_URL`, o e-mail não sai.
+- **Redefinir prova o controle do e-mail**, então também preenche
+  `emailConfirmadoEm` — exigir uma segunda confirmação de quem acabou de provar
+  isso seria atrito.
+
+### O que o log NUNCA carrega
+
+O corpo da mensagem tem o token. Só o status do provedor sai em log, e a resposta
+dele é cortada em 200 caracteres. Há teste provando que nem a chave da API nem o
+segredo do link vazam para a mensagem de erro. **Sem provedor, fora de produção,
+o LINK sai no console** (é assim que se desenvolve); em produção, sem provedor, o
+envio lança — não finge que enviou.
+
+### O e-mail do cliente
+
+`clientValidation.js` passou a usar `utils/email.js` — a MESMA função da advogada,
+sem segunda expressão. **Continua OPCIONAL**: vazio e `null` passam. Na criação o
+formato é sempre conferido; **na edição só quando o valor MUDOU** em relação ao
+gravado, porque a tela reenvia o e-mail em todo salvamento e um cliente antigo com
+e-mail torto travaria a edição do telefone. O 400 leva `campo: "email"`.
+
+### Contas anteriores à A-2
+
+Nascem com `emailConfirmadoEm: null` e mostram o aviso até confirmarem. **A conta
+do seed (`demo@lex.dev`) também nasce NÃO confirmada** (decisão do Daniel, na
+semeadura com volume): assim o aviso "Confirme seu e-mail" aparece na
+demonstração e o fluxo pode ser mostrado à banca. O login não é bloqueado, então
+nada mais muda para essa conta. Não houve migração, e não se marcou nenhuma conta antiga como confirmada por
+script: confirmar sem prova seria o oposto do que o campo diz.
+
+### Modelo de dados
+
+`users` ganhou `emailConfirmadoEm`, `senhaAlteradaEm`, `confirmacaoEmail` e
+`recuperacaoSenha` (os dois últimos com `tokenHash`, `expiraEm`, `enviadoEm`). **Nenhuma
+coleção nova.**
+
+### O que NÃO se fez, por decisão de escopo
+
+Recuperação de senha do CLIENTE no portal (continua sendo a advogada quem
+redefine), checagem SMTP de que o endereço existe (o link de confirmação já cobre
+o caso real) e qualquer mudança no portal.
+
+---
+
+## DEC-065 — o seed da 3ª banca: o cenário entra PELA API, e o banco é escolhido duas vezes
+
+**O pedido (03/10/2026):** levar `lex_prod` e `lex_test` à banca de 05/10/2026
+com o mesmo cenário completo, já populado — nada é criado ao vivo.
+
+**`scripts/banca3/`**, três comandos:
+
+| Comando | O que faz | Escreve? |
+|---|---|---|
+| `seed:banca3` | limpa as 16 coleções e recria o cenário | sim |
+| `smoke:banca3` | percorre o fluxo da banca em 8 passos | sim — recusa `lex_prod` e `lex` |
+| `conferir:banca3` | contagem + assinatura do conteúdo; `--url`/`--portal` fazem 1 login no ar | não |
+
+### O banco é escolhido duas vezes, e as duas precisam concordar
+
+`LEX_BANCO=<nome>` na linha de comando **sobrescreve** o nome do banco da
+`MONGO_URI` (por `dbName`), sem editar o `.env`. `--banco <nome>` é
+**obrigatório** e é conferido contra o nome **real** do banco depois de
+conectar. Quem esquece a variável e digita `--banco lex_test` é recusado,
+porque a conexão caiu no banco do `.env` — **que hoje é `lex_prod`**. O seed
+exige ainda `--confirmar-reset`.
+
+### A limpeza é `deleteMany`, coleção por coleção
+
+Nunca `dropDatabase` nem `dropCollection`: os dois levam os índices junto. O
+`deleteMany` deixa coleção e índices de pé, e o `init()` dos models garante os
+do schema sem derrubar nenhum (`syncIndexes`, que derruba índice fora do
+schema, **não** é chamado).
+
+### Pela API, e não pelos services soltos
+
+O seed sobe o `app` do Express **no próprio processo**, numa porta efêmera, e
+fala HTTP com ele. Cada registro atravessa rota → controller → validação →
+service. Chamar os services direto pularia a validação que mora nos
+controllers (reparcelamento, modelo, troca de senha do portal) — e o pedido era
+"dados iguais aos criados pela interface". Telefone e CEP vão só com dígitos,
+como a tela os envia.
+
+**Duas escritas diretas, e só duas**, ambas declaradas no cabeçalho do script:
+
+1. o **código de acesso** do vínculo do portal é fixado em `LEX-2026-BANC` —
+   ele nasce sorteado, e a credencial precisa ser fixa (README) e igual nos dois
+   bancos;
+2. o **`createdAt` dos honorários** é retrodatado ao mês do contrato, para o
+   gráfico "Honorários por mês" ter seis meses (o seed antigo fazia o mesmo).
+
+### A conta nasce NÃO confirmada, e o seed não manda e-mail
+
+A DEC-064 diz que nenhuma conta é marcada confirmada por script ("confirmar sem
+prova seria o oposto do que o campo diz"). O seed respeita: o cadastro é o
+`POST /auth/register` normal, e o transporte de e-mail é trocado
+(`definirTransporteDeEmail`) por um que só conta — o link não é impresso,
+porque ele confirmaria a conta.
+
+### As datas são da âncora, e o status "vencido" é o risco
+
+Tudo é relativo a 05/10/2026 (`--hoje` troca). Eventos são classificados na
+leitura e caem certo no dia; **parcela não**: `definirStatusInstallment` grava
+"vencido" no recálculo, e nada recalcula na leitura. Uma parcela que vencesse
+entre o dia do seed e a âncora ficaria "pendente" no dia da banca. O seed
+**recusa rodar** se isso acontecer.
+
+### O portal é código + senha, não e-mail
+
+O pedido falava em "cliente do portal: e-mail + senha". O portal (DEC-029 ponto
+1) entra por **código de acesso**; o e-mail `lexuepg2026+portal@gmail.com` é o
+cadastro da cliente. O `+` é aceito pela validação (DEC-063, de propósito) e não
+há regra de unicidade de e-mail ENTRE advogada e cliente: `users.email` é único
+global, `clients.email` é único por advogada — coleções diferentes.
+
+---
+
+## DEC-068 — parcela cancelada não é vencimento (Fase 0)
+
+**O defeito, apontado pela 3ª banca.** Uma parcela cancelada por
+**reparcelamento** aparecia em "Próximos vencimentos" no Início, e o cartão
+"A receber em {mês}" a somava com o valor cheio.
+
+**Por que o filtro existente não a pegava.** O resumo já excluía honorário
+`cancelado` (Fase 4.3) — mas a parcela cancelada pelo reparcelamento (DEC-037)
+pertence a um honorário **vigente**. `proximosVencimentos` só exigia
+`emAberto > 0` e vencimento futuro, e uma parcela cancelada antes de receber tem
+`emAberto` igual ao valor inteiro.
+
+### O recorte é nos derivados de VENCIMENTO, e NÃO na consulta
+
+O pedido da fase era excluir a cancelada **da consulta** de parcelas. A primeira
+versão fez isso, e o teste escrito em seguida mostrou o preço:
+
+| Caso: parcela de 4.000, pagamento parcial de 1.000, reparcelada | Filtro na consulta | Filtro nos derivados |
+|---|---|---|
+| `recebido` | **0** | 1.000 |
+| `pendente` | **4.000** | 3.000 |
+| resumo = ficha? | **não** | sim |
+
+A parcela parcial reparcelada **guarda** o dinheiro recebido — ele não volta, e
+o saldo renegociado já o descontou (DEC-037). A ficha o conta (emenda de 17/08
+à DEC-028), e `recebido` e o pago-por-honorário que sustenta `pendente` saem do
+`valorPago` das parcelas carregadas por aquela consulta. Tirá-la da consulta
+apagava dinheiro do resumo e quebrava a igualdade com as fichas, que é o que a
+Fase 4.3 existiu para garantir.
+
+Por isso a consulta continua trazendo **todas** as parcelas, e um único array
+`aVencer = linhas.filter(status !== "cancelado")` alimenta os dois derivados de
+vencimento:
+
+| Campo | Efeito da DEC-068 |
+|---|---|
+| `proximosVencimentos`, `aReceberNoMes` | a cancelada **sai** |
+| `vencidas`, `valorVencido` | nenhum — já filtram `status === "vencido"` |
+| `recebido`, `pendente` | nenhum — continuam somando o `valorPago` das canceladas |
+
+**Testes:** `tests/financial/resumo.test.js`, dois blocos com usuário próprio,
+os dois produzindo a cancelada pelo reparcelamento real (e conferindo que ela
+está mesmo `cancelado` antes de afirmar qualquer coisa):
+
+- *parcela cancelada por reparcelamento* — sem pagamento; ela não aparece em
+  nenhum dos dois derivados;
+- *parcela PARCIAL reparcelada* — `recebido` 1.000, `pendente` 3.000, e o resumo
+  fechando com a ficha. É o bloco que falha se alguém "simplificar" o recorte de
+  volta para a consulta.
+
+---
+
+## DEC-069 — "Honorários em aberto" conta o parcialmente pago (Fase 0)
+
+**O defeito, apontado pela 3ª banca.** O cartão do Início contava
+`Fee.countDocuments({ status: "pendente" })` (`dashboardService.getSummary`):
+só os honorários **sem nenhum pagamento**. O `parcialmente_pago` — o que ainda
+tem o que receber, e o estado normal de um contrato em andamento — ficava fora.
+Com o seed, a maior parte dos honorários vivos não entrava na conta.
+
+**A regra:** em aberto é `status ∈ { pendente, parcialmente_pago }`, com
+`ativo: true`. `pago` e `cancelado` ficam de fora.
+
+**O campo da resposta NÃO foi renomeado** — continua `honorariosAReceber`. É
+contrato de `GET /api/dashboard`, e renomeá-lo quebraria qualquer cliente que o
+leia. O que mudou de nome é o **rótulo da tela**: "Honorários em aberto"
+(`DashboardHomePage.jsx`).
+
+**É contagem, e continua sendo.** O VALOR em aberto existe em
+`GET /financeiro/resumo` como `pendente`. Trocar o cartão por valor é decisão
+que segue aberta (inventário de 24/10/2026, decisão 7.7).
+
+**Teste:** `tests/financial/honorariosEmAberto.test.js` produz os quatro
+estados pelo caminho real (parcela, pagamento parcial, quitação e cancelamento
+explícito) e confere os quatro antes de contar. Contagem esperada: 2.
+
+---
+
+## DEC-071 — `{{numeroParcelas}}` e `{{valorParcela}}` falam do plano VIGENTE (Fase 0)
+
+**O defeito, apontado pela 3ª banca.** `montarOrigemHonorario`
+(`documentGenerationService.js`) contava **todas** as parcelas ativas do
+honorário. Depois de um reparcelamento, as canceladas entravam: um plano de 3
+que substituiu outro de 3 virava **"6 parcelas"** no contrato. E as canceladas,
+de valor diferente, tornavam o plano "desigual" — `valorParcela` virava
+pendência 422 sem motivo real.
+
+### Por que o plano vigente, e não só "tirar as canceladas"
+
+As duas regras dão o mesmo número no caso comum (3 canceladas + 3 vigentes).
+Elas divergem num caso real, e é ele que decide:
+
+> Plano de 3 com a 1ª **paga**. O reparcelamento cancela só a 2ª e a 3ª; a paga
+> fica de pé **no plano velho** (DEC-037). O plano novo tem 2 parcelas.
+
+| Regra | `numeroParcelas` | O que o contrato diria |
+|---|---|---|
+| tirar só as canceladas | **3** (a paga + 2 novas), desiguais → pendência | mistura um plano encerrado com o de hoje |
+| **plano vigente** (escolhida) | **2** | o plano que o cliente vai pagar daqui em diante |
+
+`planoId` existe desde a DEC-048 justamente para separar gerações. Contar a paga
+do plano velho como "parcela" do plano novo é a mistura de gerações que a
+DEC-051 tirou da tela do honorário.
+
+### A regra é a MESMA da tela
+
+Um plano foi **substituído** quando alguma parcela dele carrega
+`reparcelamentoId`; o vigente é o que sobra. É o critério de
+`components/financeiro/installmentGrouping.js` no frontend — duas regras para
+"qual é o plano de hoje" fariam o contrato e a página do honorário discordarem
+sobre o mesmo honorário. O **grupo** é o critério, não a parcela: a paga do
+plano velho não torna o plano velho vigente.
+
+A regra mora em `parcelasDoPlanoVigente`, **exportada e pura**, testada sem
+banco. Ela também tira `status: "cancelado"` por precaução, embora o plano
+vigente, por definição, não tenha parcela cancelada.
+
+**Sem parcela vigente nenhuma, vale a regra de sempre:** pagamento único, uma
+parcela do valor cheio (Fase 2C).
+
+⚠️ **Decisão para a Laís:** no caso da parcela paga no plano velho, o contrato
+gerado depois do reparcelamento diz "em 2 parcelas de R$ X", e o valor total do
+honorário continua sendo o contratado (que inclui o que já foi pago). Se ela
+quiser que o texto mencione o que já foi pago, isso é variável nova, não ajuste
+desta regra.
+
+**Testes:** `tests/documents/generation.test.js`, bloco DEC-071 — um honorário
+com 3 parcelas desiguais reparcelado em 3 iguais gera "Em 3 parcela(s) de
+R$ 1.000,00" sem pendência; mais a função pura no caso da parcela paga e no caso
+sem reparcelamento.
+
+---
+
+## DEC-072 — telefone e CEP formatados no timbrado (Fase 0)
+
+**O defeito.** A tela grava telefone e CEP **só com dígitos** (é o contrato
+desde a Fase 1, e o seed da DEC-065 faz o mesmo). `letterheadService.montarTimbrado`
+os imprimia como estavam: o cabeçalho de todo documento e de todo recibo saía com
+"42999991234" e "CEP 84010000".
+
+**A correção reutiliza o que já existia.** `utils/templateFormatters.js` tem
+`telefone` e `cep` desde a Fase 2C — são os formatadores das variáveis
+`{{telefoneCliente}}`, `{{cepCliente}}` e companhia. O timbrado passou a usá-los,
+em vez de ganhar uma segunda regra para o mesmo dado:
+
+| Entrada | Saída |
+|---|---|
+| telefone com 11 dígitos | `(DD) NNNNN-NNNN` |
+| telefone com 10 dígitos | `(DD) NNNN-NNNN` |
+| CEP com 8 dígitos | `NNNNN-NNN` |
+| já formatado | igual (os formatadores extraem os dígitos antes) |
+| vazio | some da linha, sem separador solto |
+| qualquer outro tamanho | **sai como está** — formato inventado é pior que nenhum |
+
+**O que muda no papel:** o cabeçalho do documento **e** o do recibo, porque o
+timbrado é compartilhado (Fase 4.1). Nada muda no banco: a formatação é na
+impressão. `letterheadService.js` está entre os arquivos que só se alteram com
+fase que o tenha no escopo (Limites permanentes); esta fase o tinha, por pedido
+explícito.
+
+**Teste:** `tests/documents/timbrado.test.js`, sobre `montarTimbrado` direto
+(função pura, sem banco nem PDF): 10 e 11 dígitos, já formatado, vazio e tamanho
+inválido, para telefone e para CEP.
+
+---
+
+## Fase 2.5 — o portal por PESSOA (DEC-089 a DEC-095)
+
+> **Emenda à DEC-029.** Os pontos 1 (login = código + senha) e 6 (sessão
+> escopada ao VÍNCULO) mudam aqui; os outros dez continuam de pé. A tabela de
+> rotas `/api/portal` mais acima descreve a Fase 3.1 — a de agora está na
+> DEC-092. Apontamentos 14 e 15 da 3ª banca: o código deve ser da pessoa, e uma
+> senha deve abrir todos os processos liberados.
+
+### DEC-089 — o código de acesso é da PESSOA
+
+`Client.codigoAcessoPessoal` (String, 13 caracteres, **índice único global e
+`sparse`**). Mesmo formato e mesmo gerador do código de vínculo
+(`utils/accessCode.js`). É sorteado quando o cliente passa a ter senha de portal
+e ainda não tem código (`clientService.aplicarSenhaPortal`); redefinir a senha
+**mantém** o código, e revogar o acesso **não o apaga** (fica reservado e volta
+a valer com a próxima senha — sem senha não há login).
+
+**Não é o CPF/CNPJ:** o mesmo CPF pode ser cliente de duas advogadas (o `Client`
+é por `usuarioId`), e o CPF é dado conhecido de terceiros.
+
+**Unicidade nos DOIS espaços** (`services/codigoPessoal.js`). Índice não
+atravessa coleção; os dois geradores do sistema (`gerarCodigoPessoal` e
+`gerarCodigoParaVinculo`) consultam `codigoEmUso`, que olha
+`clients.codigoAcessoPessoal` **e** `processo_clientes.codigoAcesso`. Dentro de
+cada espaço a corrida é fechada pelo índice (o 11000 do código pessoal repete a
+geração em `salvarClienteComCodigo`). Entre os espaços, a janela de corrida é a
+de sortear duas vezes o mesmo em 32^8 no mesmo milissegundo — e seria
+inofensiva, porque o login só procura o código pessoal. Testado com o sorteio
+**forçado** a colidir nos dois sentidos (`tests/portal/isolamento.test.js`).
+
+**Não sai em leitura ampla.** `codigoAcessoPessoal` está no `toJSON` global
+(`config/mongooseDefaults.js`), como o código de vínculo sempre esteve fora das
+listagens. Sai só por `GET /processes/:id/clientes/:clienteId/codigo-acesso` e
+`GET /clients/:id/acesso-portal`, que o montam campo a campo.
+
+### DEC-090 — sem transição: o código de vínculo deixa de autenticar
+
+O login procura **só** `codigoAcessoPessoal`. Um código de vínculo digitado,
+mesmo com a senha certa, cai no mesmo 401 `credenciaisInvalidas`, com o mesmo
+bcrypt gasto. `ProcessoCliente.codigoAcesso` continua no schema, continua sendo
+gerado e continua no **índice único global** — por RESERVA: um papel antigo tem
+código de formato válido, e se ele fosse sorteado como código pessoal de outra
+pessoa, abriria a conta errada.
+
+O token da sessão por vínculo (sem `escopo`) também cai: o middleware exige
+`escopo: "pessoa"`, e o token antigo volta ao login.
+
+### DEC-091 — a liberação é por processo, e o vínculo novo nasce NÃO liberado
+
+`ProcessoCliente.liberadoNoPortal` (Boolean, obrigatório, **padrão `false`**).
+Login por pessoa; o que ela vê é decidido processo a processo pela advogada:
+`PATCH /api/processes/:id/clientes/:clienteId/liberacao { liberadoNoPortal }`
+(só vínculo ativo, isolado por `usuarioId`; o corpo aceita uma chave booleana, e
+o resto é 400 com `campo`).
+
+**Independe de `ativo`.** A cascata da DEC-052 não toca no campo: desativar
+tira o acesso pelo `ativo`; reativar devolve o vínculo como ele estava —
+liberado ou não. Há teste para "reativar não libera sozinho".
+
+Os vínculos que existiam antes da 2.5 foram migrados como liberados (DEC-094).
+
+### DEC-092 — sessão da pessoa; a liberação é conferida A CADA requisição
+
+**Token:** `{ tipo: "portal", escopo: "pessoa", clienteId, usuarioId,
+senhaCarimbo }`, sem processo, 2 h. **Login** (401 unificado): código
+inexistente, código de vínculo (ativo ou inativo), cliente sem senha, senha
+errada e cliente inativo — byte-idênticos. Vínculo e processo inativos saíram
+da lista: o login não olha processo; entrar sem nenhum liberado é estado válido
+(lista vazia).
+
+**Dois portões** em `middleware/portalAuthMiddleware.js`:
+`portalAuthMiddleware` (token, cliente ativo da mesma advogada, carimbo) e
+`exigirVinculoLiberado` em toda rota com `:processoId` (vínculo ativo **e**
+liberado, processo ativo, tudo pelo `usuarioId` do token). Desliberar no meio da
+sessão vale na requisição seguinte — a liberação **não** vai no token. "Não
+existe", "não é seu", "não liberado" e id malformado respondem o **mesmo** 404
+`{ "message": "Processo não encontrado" }`.
+
+| Verbo | Caminho | Nota |
+|---|---|---|
+| POST | `/login` | código PESSOAL + senha → `{ senhaPortalProvisoria, clienteId }` |
+| POST | `/logout` | — |
+| GET | `/sessao` | `{ senhaPortalProvisoria, cliente: { id, nome, tipoPessoa, senhaPortalProvisoria } }` |
+| PATCH | `/senha` | sem mudança; reemite a sessão da pessoa |
+| GET | `/confirmacoes/texto` | sem processo: é constante |
+| POST | `/processos/:processoId/confirmacoes` | antes do portão da senha provisória (403 próprio) |
+| GET | `/processos` | ⬇ daqui para baixo, 403 com senha provisória. Envelope; cada item: `id, titulo, numeroProcesso, status, fase, transitoEmJulgadoEm, meuPapel, documentosVisiveis, documentosNovos, confirmacaoPendente, ultimaConfirmacao` |
+| GET | `/processos/:processoId` | `{ processo, cliente, acesso }`, como o antigo `/processo` |
+| GET | `/processos/:processoId/documentos` | envelope |
+| GET | `/processos/:processoId/documentos/:id/download` | `?formato=pdf\|docx` |
+| GET | `/processos/:processoId/confirmacoes` | envelope; cada recibo traz `processo: { id, titulo, numeroProcesso }` |
+
+**Removidas:** `GET /processo`, `GET /documentos`, `GET /documentos/:id/download`,
+`GET /confirmacoes` e `POST /confirmacoes`.
+
+`documentosNovos` = documentos visíveis gerados depois da última confirmação
+daquele vínculo (todos, se nunca confirmou); `confirmacaoPendente` =
+`documentosNovos > 0`. A confirmação continua **por vínculo**
+(`ConfirmacaoVisualizacao`), e o acesso é registrado no vínculo do processo
+aberto — a lista não registra acesso.
+
+### DEC-093 — `codigo-acesso` continua, e devolve o código PESSOAL
+
+`GET /processes/:id/clientes/:clienteId/codigo-acesso` foi **mantida** — é a que
+quebra menos: a tela de entrega e a suíte já a usam, e a chave `codigoAcesso`
+continua a mesma. O que mudou é o valor (o código **pessoal**, `null` sem
+senha de portal) e os campos novos: `liberadoNoPortal`, `temSenhaPortal`,
+`senhaPortalProvisoria`. O código de VÍNCULO não sai mais por rota nenhuma: não
+abre nada, e mostrá-lo seria convidar a advogada a entregar um papel inútil.
+
+`GET /clients/:id/acesso-portal` (novo): `{ clienteId, codigoAcessoPessoal,
+temSenhaPortal, senhaPortalProvisoria, senhaPortalDefinidaEm,
+processosLiberados, processosAtivos, processos: [{ processoId, titulo,
+numeroProcesso, papel, principal, liberadoNoPortal, situacao, …acessos }] }` —
+objeto, sem envelope (é UM cliente). `situacao` é `ativo`, `vinculoDesativado`
+ou `processoDesativado`.
+
+`GET /processes/:id/clientes` ganhou `temAcessoPortal` (booleano; uma consulta
+para todos os participantes, o hash não sai).
+
+### DEC-094 — a migração e o seed
+
+`npm run migrar:portal-pessoal` (`scripts/migrarPortalPessoal.js`), com a
+guarda de banco da F-2b e `--dry-run`. Gera `codigoAcessoPessoal` para todo
+cliente com senha e sem código; marca `liberadoNoPortal: true` em vínculo
+**ativo** sem o campo e `false` em vínculo inativo sem o campo. Todo filtro de
+escrita exige o campo ausente: a segunda execução não muda nada
+(`tests/integrity/migracaoPortal.test.js` compara o banco inteiro). Imprime só
+contagens — nenhum código. Usa `createIndexes`, nunca `syncIndexes`.
+
+**Num banco migrado o código pessoal da Mariana é sorteado**, e não o
+`LEX-2026-BANC` do README (que era do vínculo). Ele aparece na tela da advogada,
+e `conferir:banca3 --portal` o lê pela API em vez de supô-lo.
+
+`seed:banca3` fixa o código **pessoal** da Mariana em `LEX-2026-BANC`, libera P1
+pela rota e a põe em P3 (litisconsorte) **sem** liberação — o caso da
+demonstração.
+
+### DEC-095 — as duas pendências da 2b
+
+- `GET /fees` popula `processoId.clientePrincipalId` com
+  `CAMPOS_CLIENTE_POPULADO`; o resto do retorno não mudou.
+- O botão dos e-mails transacionais sai do dourado `#b89d4b`/`#111` para
+  `#174034`/`#EDE3CF` (10,4:1). As demais cores dos modelos (`#222`, `#555`
+  sobre branco) são neutras e ficaram.
+
+---
+
+## DEC-098 — `?mes=AAAA-MM` no resumo financeiro e no gráfico mensal (Fase 3.1)
+
+Apontamento 6 da banca: o Início passa a ter filtro de mês. Nenhuma rota nova:
+as duas que o Início já chamava ganham um parâmetro opcional.
+
+| Rota | Com `?mes=` | Sem `?mes=` |
+|---|---|---|
+| `GET /financeiro/resumo` | `aReceberNoMes`, `recebidoNoMes` e `mesReferencia` do mês pedido | o mês corrente, em UTC (como antes) |
+| `GET /dashboard/honorarios-por-mes` | janela de 6 meses que **termina** no mês pedido | termina no mês corrente (como antes) |
+
+**O que NÃO muda com `mes`, e por quê.** `valorContratado`, `recebido`,
+`pendente`, `saldoAdiantado`, `vencidas`, `valorVencido` e
+`proximosVencimentos` são retrato de HOJE: "quanto está vencido" e "o que vence
+daqui para a frente" não têm versão de março. Calcular "o vencido em março"
+exigiria o status que cada parcela tinha em março, que o sistema não guarda —
+e um número reconstruído por suposição, ao lado de números reais, é pior que a
+ausência. `hoje` continua saindo do relógio; só o recorte do mês segue o pedido.
+
+**Validação à mão** (`filtroMesReferencia`, em `utils/filtrosDeConsulta.js`):
+`AAAA-MM`, mês de 01 a 12, ano de **2000 a 2100**; ausente ou vazio é "sem
+mês"; qualquer outra coisa — inclusive o parâmetro repetido, que o Express
+entrega como array — é **400 com `campo: "mes"`**. As bordas do mês são em UTC,
+pela mesma razão do contrato da 4.3.
+
+**A DEC-068 vale com `mes`:** a parcela cancelada fica fora de
+`aReceberNoMes` em qualquer mês pedido, não só no corrente.
+
+**Testes** (`tests/financial/resumo.test.js`): ausente = corrente explícito;
+mês passado e mês futuro com valores conferidos; os campos fixos idênticos com e
+sem `mes`; oito formatos inválidos e o mês repetido em 400 com `campo`; o
+gráfico com a janela deslocada e com `2026-13` em 400; a cancelada fora com
+`?mes=`. **Commit:** `a92ef0b`.
+
+O lado da tela (o seletor, a URL, o espelho por mês, o que cada bloco segue) é a
+DEC-098 do `CLAUDE.md` do frontend.
+
+---
+
+## Fase 3.2 — listas e formulários financeiros: o back só ACRESCENTA
+
+**Regra da fase (decisão 5):** nenhum campo existente mudou de nome ou de
+forma; só entraram campos e alcance de busca. Os testes de contrato antigos
+continuam, com **duas exceções autorizadas pelo Daniel** em
+`tests/financial/resumo.test.js`: a lista exata de chaves de
+`proximosVencimentos` ganhou `clientePrincipalNome`, e a poda subiu de 5 para 8
+(o arranjo foi de 7 para 10 parcelas para a poda continuar visível).
+
+## DEC-101 — a busca dos seletores: cliente principal e sem acento (Fase 3.2)
+
+Os seletores de processo e de honorário dos formulários passaram a buscar no
+servidor (o lado da tela é a DEC-101 do front). O que cada busca alcança:
+
+| Rota | Antes (até a 3.1) | Agora |
+|---|---|---|
+| `GET /processes?busca=` | `titulo` e `numeroProcesso`; caixa ignorada, **acento não**; termo até 80 caracteres | os dois **e o nome do cliente principal**; **acento e caixa ignorados** |
+| `GET /fees?busca=` | `descricao` e número do processo (F-1b.3); caixa ignorada, acento não; 80 caracteres | os dois **e o nome do cliente principal**; acento e caixa ignorados |
+
+- **O padrão é o de `/secoes`** (`regexBuscaTexto`), com a guarda de tipo de
+  `regexTermoSimples` — `regexBuscaDaQuery` em `utils/texto.js`: o parâmetro
+  repetido (array) não vira a busca literal por "a,b".
+- **Cliente principal** = `Process.clientePrincipalId`. A busca resolve os ids
+  antes (`processosPorClientePrincipal`, em `services/buscaFinanceira.js`):
+  clientes cujo `nomeCompleto`/`razaoSocial`/`nomeFantasia` casam → processos
+  em que ele é o principal. Litisconsorte não conta. Mesma técnica da F-1b.3
+  (projeção de `_id` + `$in`), sem `$lookup`.
+- **As listagens de parcelas e pagamentos herdam o alcance**, porque usam o
+  mesmo `alvosDaBusca`. Só ALARGA: todo termo que casava continua casando.
+- `GET /processes` já populava `clientePrincipalId` com
+  `CAMPOS_CLIENTE_POPULADO` na listagem; `GET /fees` já trazia o cliente dentro
+  de `processoId` desde a 2.5 — conferidos, nada mudou.
+- Busca vazia (ou só espaços) é a listagem sem busca.
+
+Testes: `tests/financial/busca32.test.js` (cada campo, com e sem acento,
+isolamento nos dois sentidos, vazia = sem busca, metacaractere literal, e o
+101º honorário achado além do teto de 100).
+
+## DEC-102 — processo e cliente nas listagens de parcelas e pagamentos (Fase 3.2)
+
+As três listas financeiras ganharam a coluna Cliente (apontamentos 3 e 4).
+
+| Rota | Campo novo |
+|---|---|
+| `GET /installments` | **`processo: { _id, numeroProcesso, titulo, clientePrincipalNome }`** em cada linha, ou `null` |
+| `GET /payments` (e o 201/GET por id, que usam o mesmo populate) | `honorarioId.processoId.clientePrincipalId` populado com `CAMPOS_CLIENTE_POPULADO` |
+
+**Por que `processo` é chave nova, e não `feeId.processoId` populado:**
+`feeId.processoId` é hoje um **id** (string); populá-lo trocaria a forma de um
+campo existente, que é o que a fase proíbe. Sai do processo do **honorário**,
+não do `processoId` desnormalizado da parcela (a escolha do resumo e da ficha).
+Uma consulta para a página inteira. No pagamento, o processo **já era objeto**:
+a chave nova entra dentro dele, como em `GET /fees` desde a 2.5.
+
+Teste: `tests/financial/listas32.test.js` (inclui que `feeId.processoId`
+continua string).
+
+## DEC-104 — `GET /dashboard`: confirmações por processo e processos não liberados (Fase 3.2)
+
+Duas chaves novas; as sete de antes não mudaram.
+
+| Chave | Forma | Regra |
+|---|---|---|
+| `confirmacoesNovasPorProcesso` | `[{ processoId, numeroProcesso, titulo, quantidade }]` | `vistaPelaAdvogada: false` (a condição de `contarNaoVistas`), agrupada por processo, **até 10**, pela confirmação mais recente; **só processo ativo** |
+| `processosNaoLiberados` | number | vínculos **ativos** com `liberadoNoPortal: false` cujo cliente tem **senha de portal** (a regra do `temAcessoPortal`), cliente e processo ativos |
+
+> ⚠️ **Desde a 3.3 (DEC-108)** a contagem é de **processos distintos**, e há `processoNaoLiberadoId`.
+
+- **Só processo ativo na lista curta:** o destino do clique é a ficha, e a ficha
+  de processo desativado responde 404. Como a confirmação não cascateia, a soma
+  das quantidades pode ser menor que `confirmacoesNaoVistas`.
+- **Conta vínculos, não processos:** um processo com dois clientes de portal
+  não liberados são duas liberações pendentes.
+
+Teste: `tests/portal/dashboard32.test.js` (ordem, quantidade, marcar vistas
+tira da lista, isolamento, vínculo inativo e cliente sem portal fora, processo
+desativado fora).
+
+## DEC-108 — `processosNaoLiberados` conta PROCESSOS, e `processoNaoLiberadoId` (Fase 3.3)
+
+> **Emenda à DEC-104.** Mudança de semântica **autorizada** pelo Daniel: o
+> campo nasceu na 3.2 e só o Início o lê.
+
+| Chave | Na 3.2 | Desde a 3.3 |
+|---|---|---|
+| `processosNaoLiberados` | número de **vínculos** (ativos, cliente com senha de portal, `liberadoNoPortal: false`, cliente e processo ativos) | número de **processos distintos** com pelo menos um vínculo assim |
+| `processoNaoLiberadoId` | — | **novo**: o id do processo quando a contagem é exatamente **1**; senão `null` |
+
+**Por quê:** o cartão do Início diz "Processos não liberados no portal", e um
+processo com dois clientes de portal não liberados contava 2. Com um processo
+só, o Início abre a ficha dele — onde mora o interruptor —, como o cartão de
+confirmações já fazia.
+
+Os testes da 3.2 (`tests/portal/dashboard32.test.js`) continuam passando sem
+mudança de asserção: cada caso deles tinha um vínculo por processo. O comentário
+do cabeçalho foi corrigido. Testes novos em `tests/portal/dashboard33.test.js`:
+dois clientes no mesmo processo contam 1; liberar só um mantém o processo; dois
+processos contam 2 com id nulo; o id acompanha o processo que sobra; isolamento
+nos dois sentidos.
+
+## DEC-105 — o cliente e o limite de 8 nas fontes das Datas próximas (Fase 3.2)
+
+| Rota | Mudança |
+|---|---|
+| `GET /financeiro/resumo` → `proximosVencimentos[]` | campo novo **`clientePrincipalNome`** (string ou `null`); limite **5 → 8** (`PROXIMOS_VENCIMENTOS`) |
+| `GET /calendar` → itens `natureza: "evento"` | `processo.clientePrincipalNome` (campo novo dentro do objeto que já existia) |
+
+O nome sai de `nomeExibicaoDoCliente`. A projeção compartilhada
+(`projetarEvento`) **não** mudou: o sino e o CRUD do evento não pediram o
+cliente; o acréscimo é só na leitura do calendário. Teste:
+`tests/financial/datasProximas32.test.js` e as duas asserções atualizadas de
+`resumo.test.js`.
+
+## DEC-106 — o seed da banca vale em qualquer `--hoje` (Fase 3.2)
+
+A conferência final de `seed:banca3 --hoje` acusava "parcelasVencidas=7
+(esperado 1)" desde a 2.5. **O defeito era dos DADOS, não da conferência:** as
+parcelas em aberto do mês da âncora tinham dia fixo (`{ m: 0, d: 15 }`), e só
+ficavam no futuro com âncora entre os dias 1 e 6 (a padrão é 05/10). Com
+`--hoje 2026-10-25`, as de 07, 10, 15 e 20/10 nasciam vencidas.
+
+- Essas parcelas passaram a `{ dias: n }`, contados da âncora, com números
+  escolhidos para dar **as mesmas datas na âncora padrão** (34 parcelas
+  comparadas, 0 diferenças).
+- `emMes` limita o dia ao fim do mês: `{ m: -1, d: 30 }` numa âncora de março
+  seria "30 de fevereiro", que o `Date.UTC` empurra para março.
+- Rodado contra banco local temporário com `--hoje 2026-10-26`: a conferência
+  fecha (`parcelasVencidas=1`).
+
+---
+
+## DEC-110 — `GET /clients?busca=` para o seletor de participante (Fase 3.3b)
+
+O formulário do processo escolhia o participante num `<select>` com os 100
+primeiros clientes (`limit: 100`): o 101º não aparecia em lugar nenhum. A tela
+passou a buscar no servidor (DEC-110 do front), e a busca de clientes ALARGOU,
+no padrão da DEC-101:
+
+- **sem acento e sem caixa** (`regexBuscaDaQuery`, o de `/processes` e
+  `/secoes`): "joao" acha "João Conceição", "pao quente" acha "Padaria Pão
+  Quente Ltda";
+- **nome fantasia** entrou como alvo, ao lado de `nomeCompleto`, `razaoSocial`
+  e `email` (que continua);
+- **CPF/CNPJ**, com ou sem máscara (`alvosDoDocumento`, exportada): o banco
+  guarda só dígitos, então o termo vira dígitos — mas só quando o termo É um
+  documento (dígitos e `.-/` e espaço, com **3 dígitos ou mais**). Sem essa
+  guarda, "Rua 1" casaria todo CPF com um "1".
+
+**Só alarga:** todo termo que casava antes continua casando (o regex sem
+acento aceita a grafia digitada); metacaractere continua literal; o filtro
+continua com `usuarioId`. Nenhum campo novo na resposta, nenhuma rota nova.
+`tests/clients/busca.test.js` (17 testes), com mutação conferida: com a busca
+antiga o arquivo não passa.
+
+---
+
+## DEC-113 — o preflight aceita os cabeçalhos da fila offline (Fase 3.4)
+
+`allowedHeaders` do CORS (`src/app.js`) ganhou **`X-If-Unmodified-Since`** (a
+versão vista, DEC-060) e **`Idempotency-Key`** (o reenvio da fila, F-5b). Em
+produção a API é mesma origem (`VITE_API_URL=/api`) e não há preflight; no
+desenvolvimento (5173 → 3001) o navegador recusava o preflight, e a mudança
+de fase, o compromisso e o reenvio da fila morriam antes de sair — com a
+tela dizendo "Não foi possível falar com o servidor". O segundo cabeçalho foi
+achado na verificação no navegador da 3.4. Só acrescenta;
+`tests/infra/cors.test.js` confere os dois e que origem de fora continua sem
+permissão.
+
+## DEC-114 — o processo nasce ativo (Fase 3.4, apontamento 9 da banca)
+
+**O back não mudou.** A tela deixou de enviar `status` na criação; o modelo
+tem `default: "ativo"`. O campo continua aceito na criação e na edição.
+`tests/process/criacao34.test.js` trava as duas pontas: sem `status`, volta
+`ativo` com a fase escolhida; com `status`, grava o enviado.
+
+## DEC-115 — os filtros novos de `GET /processes` e `GET /processes/tipos-acao` (Fase 3.4)
+
+Só acréscimos; sem os parâmetros novos a listagem é a de sempre.
+
+| Parâmetro | Regra | Torto |
+|---|---|---|
+| `tipoAcao` | IGUALDADE sem acento e sem caixa (`regexIgualSemAcento`, ancorado); vazio ignora | não-texto ou > 200 → 400 `campo: "tipoAcao"` |
+| `de`, `ate` | por `dataDistribuicao`, bordas em UTC (`filtroPeriodo`, o do financeiro, DEC-103); sem data fica fora quando há período | data torta ou invertida → 400 com `campo` |
+| `portal` | `nao_liberado`: algum vínculo ativo de cliente ativo COM portal e `liberadoNoPortal: false`, processo ativo; `liberado`: algum liberado e nenhum não liberado; vazio ignora | outro valor → 400 `campo: "portal"` |
+
+- **A regra do portal mora em `services/liberacaoNoPortal.js`**
+  (`processosPorLiberacao`), extraída de `dashboardService` sem mudar: o
+  cartão "Processos não liberados" do Início (DEC-108) e
+  `?portal=nao_liberado` a chamam — há teste exigindo os dois números iguais
+  no mesmo banco.
+- **`GET /processes/tipos-acao`** (antes de `/:id` na rota): os tipos da
+  usuária, dos processos **ativos e desativados**, `{ data: [...] }`, em ordem
+  alfabética em português, até 200. Grafias que só diferem em acento ou caixa
+  são uma opção (fica a com maiúscula e acento) — o filtro já as trata como
+  iguais.
+- `tests/process/filtros34.test.js` (21): cada filtro, combinados, o período
+  na virada do mês, o processo sem data, 400 com `campo`, metacaractere
+  literal, isolamento por `usuarioId` e a igualdade com o Início.
+
+---
+
+## DEC-119 — os processos de um cliente e o portal por cliente (Fase 3.5)
+
+Só acréscimos; sem os parâmetros novos as listagens são as de sempre.
+
+| Rota / parâmetro | Regra | Torto |
+|---|---|---|
+| `GET /processes?clienteId=` | processos em que o cliente tem vínculo **ativo**, principal ou não; combina com os filtros da DEC-115, `status`, `situacao` e `busca` (os recortes por id vão num `$and`) | não-id ou repetido → 400 `campo: "clienteId"`; cliente de outra advogada → lista vazia, igual à de um id inexistente |
+| `GET /clients?portal=` | `com_acesso` (tem senha de portal), `sem_acesso` (não tem), `nao_liberado` (vínculo ativo não liberado, cliente e processo ativos, com portal) | outro valor → 400 `campo: "portal"`; vazio ignora |
+| `GET /clients?tipoPessoa=` | `PF` → `fisica`, `PJ` → `juridica` | outro valor (inclusive `fisica`) → 400 `campo: "tipoPessoa"` |
+| `GET /clients/:id/acesso-portal` | cada item de `processos` ganhou `vinculoAtivo` e `processoAtivo`; a lista sai **ordenada por número** (sem número por último, depois o título) | — |
+
+- **`nao_liberado` usa a regra da DEC-108/115**, sem cópia:
+  `liberacaoNoPortal.js` passou a expor os **vínculos** que contam
+  (`vinculosQueContam`), e os processos (o cartão e `?portal=` dos processos)
+  e os clientes (`clientesComProcessoNaoLiberado`) saem deles. Há teste
+  derivando a lista de forma independente pelo `acesso-portal` de cada cliente
+  e conferindo os processos contra `processosNaoLiberados` do Início.
+- **Processo desativado não aparece em `?clienteId=`**, nem com
+  `situacao=todos`: a cascata da DEC-052 derruba o vínculo, e a regra é
+  "vínculo ativo".
+- `acesso-portal` já tinha `processos` desde a 2.5 (com `situacao`); os campos
+  e as contas de antes não mudaram — o que mudou é a ORDEM do array (antes
+  `ativo` desc e `createdAt`), que nenhuma tela nem teste usava.
+- O código pessoal continua só nas rotas dedicadas: ausente de `GET /clients`
+  (com os filtros novos) e do detalhe comum — há teste.
+- `tests/clients/filtros35.test.js` (23); mutação conferida (sem `ativo: true`
+  no vínculo, 4 testes caem).
+
+## DEC-126 — o exemplo do timbrado do perfil (Fase 3.6)
+
+**`GET /api/auth/me/timbrado-exemplo`**, autenticada. Devolve um PDF de **uma**
+página: o timbrado com os dados **salvos** da advogada da sessão e um parágrafo
+curto ("Este é um exemplo de como o seu timbrado aparece nos documentos e
+recibos."). `Content-Disposition` com `exemplo-timbrado-<escritorio>.pdf` (por
+`nomeArquivoSeguro`) e `Access-Control-Expose-Headers`, como o recibo.
+
+- **Sob `/me`**, ao lado do `GET`/`PATCH` do perfil: é um dado do perfil dela,
+  e o caminho não carrega id nenhum.
+- **Sai por `renderizarPdf`** (`documentRenderService.js`), o MESMO caminho do
+  download de documento — cabeçalho, rodapé, margens e fontes do
+  `letterheadService.js`. Nenhum dos dois arquivos foi alterado: a rota só os
+  chama (`services/letterheadSampleService.js`). Uma folha montada à parte, ou
+  o timbrado desenhado em HTML na tela, seria a segunda regra para o mesmo
+  papel, e a prévia divergiria do documento real em silêncio.
+- **Isolamento por construção:** o service recebe só `req.user._id`; nenhum
+  parâmetro de query, corpo ou caminho é lido. `?usuarioId=`, `?id=`,
+  `?_id=` e `?usuario=` com o id de outra conta devolvem o timbrado **da
+  sessão**; `/timbrado-exemplo/<id>` é 404. Mutação conferida: ler
+  `req.query.usuarioId` derruba o teste de isolamento.
+- **Nada é gravado** (como o recibo): emitir não cria `Document`.
+- `tests/auth/timbradoExemplo.test.js` (8): 401 sem sessão; PDF de uma página;
+  os dados salvos e o parágrafo; telefone e CEP formatados (DEC-072); sem logo
+  (nenhuma imagem), com logo (a imagem entra), removido; sem endereço (a linha
+  some); isolamento; nada gravado.
+- **E a trava do PATCH parcial**, de que o perfil passou a depender (DEC-128 do
+  front envia só o que mudou): `tests/auth/perfilParcial.test.js` (7). O que
+  não vem fica como estava — inclusive dentro de `oab`, `advocacia` e
+  `endereco`, que o `updateMe` já mesclava campo a campo — e `null` apaga só o
+  campo enviado. O contrato não mudou: foi conferido antes de mexer na tela.
+
+## DEC-130 — o cliente e o em aberto nas vencidas do sino (Fase 3.7)
+
+A Visão geral do Financeiro passou a listar as parcelas vencidas, e as lê de
+**`GET /calendar/avisos`** — a mesma fonte que o sino e o Início contam
+(DEC-057: um número, uma fonte). Faltavam duas coisas na linha, e as duas
+entraram como **acréscimo** em `parcelasVencidas[]`:
+
+| Campo novo | Valor |
+|---|---|
+| `processo.clientePrincipalNome` | o `nomeExibicaoDoCliente` do cliente principal (DEC-105); `null` sem cliente |
+| `emAberto` | `max(0, emCentavos(valor − valorPago))` — a conta de `proximosVencimentos` e de `valorVencido` |
+
+- **A soma dos `emAberto` é o `valorVencido` do resumo**, e há teste: o cartão
+  "Total vencido hoje" e a lista embaixo dele não podem discordar.
+- Só `lerAvisos` mudou. As derivadas de `GET /calendar` (a grade da Agenda)
+  **não** ganharam os campos: ninguém os pediu ali.
+- O sino ignora os dois campos. Nada do que existia na linha mudou (há teste
+  conferindo as chaves).
+- `tests/calendar/avisos37.test.js` (4); mutação conferida (sem o `populate`
+  do cliente, 1 teste cai).
+
+---
+
+## DEC-138 — busca, período e só documentos em `GET /documents`; busca em `/documents/modelos` (Fase 3.9a)
+
+A lista de Documentos ganhou o padrão das outras (DEC-102/103 do front):
+busca, período e **paginação de verdade**. Até aqui a tela pedia 100 e tirava
+os modelos **na tela** — com paginação o `total` contaria os modelos e a
+página 2 começaria no lugar errado. Só acréscimos; sem os parâmetros novos a
+listagem é a de sempre (documentos **e** modelos, mais novos primeiro).
+
+| Parâmetro | Regra | Torto |
+|---|---|---|
+| `busca` | `nome` do documento, número do processo, nome do cliente — sem acento e sem caixa (`regexBuscaDaQuery`, DEC-101). O cliente casa pelo `clienteId` do documento (de quem é a peça) **ou** pelo principal do processo (os gerados antes da 2B não têm `clienteId`) | array/objeto ignorado, como nas outras |
+| `de`, `ate` | por **`dataGeracao`**, bordas em UTC (`filtroPeriodo`, DEC-103). Sem data de geração (o upload dormente, o modelo) fica fora quando há período | data torta ou invertida → 400 com `campo` |
+| `ehModelo` | `false` tira os modelos (`{ $ne: true }`, acha também o antigo sem o campo); `true` só os modelos; ausente, os dois | outro valor → 400 `campo: "ehModelo"` (`filtroBooleano`, novo em `filtrosDeConsulta.js`) |
+
+- **Chave nova em cada linha: `cliente: { _id, nome } | null`** — a coluna
+  Cliente da lista. `clienteId` **continua id** (string): populá-lo trocaria a
+  forma de um campo existente, a regra da DEC-102. Uma consulta para a página
+  inteira.
+- **`GET /documents/modelos?busca=`** pelo nome do modelo, sem acento e sem
+  caixa. Cada "montar um modelo novo" da geração cria um modelo, sem teto; a
+  escolha na montagem pedia os 100 mais recentes. Sem `busca`, a de sempre.
+- **`GET /secoes` não mudou:** já tinha busca sem acento (`titulo`), `tipo` e
+  o envelope paginado (conferidos).
+- `tests/documents/lista39.test.js` (14): cada filtro, combinados, o período
+  na virada de setembro para outubro (30/09 23:59 e 01/10 00:00 UTC), 400 com
+  `campo`, metacaractere literal, isolamento por `usuarioId` (mesmo nome,
+  cliente e data na outra conta), `processoId` e `clienteId` com a forma de
+  sempre, e a listagem sem os parâmetros novos.
+
+---
+
+## DEC-144 — o anterior do aviso de portal sem o teto de 100: três filtros em `GET /documents` (Fase 3.9b)
+
+A geração (front, `GenerationPanel`) avisa antes de regerar quando o
+documento anterior **desta combinação** está visível no portal (Fase 3.2).
+O critério é o de `buscarGeradoAnterior`: **modelo × processo × cliente**,
+`ehModelo` falso, ativo — e, para o aviso, `visivelPortal: true`. A tela pedia
+`GET /documents?processoId=&limit=100` e procurava o anterior ali: num processo
+com mais de 100 documentos, o anterior mais antigo ficava fora da página e **o
+aviso sumia**, em silêncio.
+
+**A regra do aviso não mudou** (nem as frases, nem o `sairaDoPortal`); mudou a
+consulta. Três filtros novos, **só aditivos** — ausentes, a listagem é a de
+sempre:
+
+| Parâmetro | Regra | Torto |
+|---|---|---|
+| `geradoDeModeloId` | o modelo de origem | id inválido → 400 `campo: "geradoDeModeloId"` (`filtroObjectIdExigido`, a guarda do `processoId`) |
+| `clienteId` | o participante de quem é a peça (o campo, não a busca por nome da DEC-138) | id inválido → 400 `campo: "clienteId"` |
+| `visivelPortal` | `true` / `false` | outro valor → 400 `campo: "visivelPortal"` (`filtroBooleano`) |
+
+A tela passa a pedir **só** o que o aviso precisa: `processoId`,
+`geradoDeModeloId`, `clienteId`, `visivelPortal=true`, `ehModelo=false`,
+`limit=1`. A ordem é a de sempre (`createdAt` decrescente), então o primeiro
+da página é o mesmo que o `.find` da tela achava na lista de 100.
+
+`tests/documents/anteriorPortal39b.test.js` (6): um processo com **107**
+documentos, em que o anterior visível é o **mais antigo** — a consulta antiga
+(`limit=100`) não o traz, a nova o traz sozinho; cada filtro recorta pelo seu
+campo; sem os filtros novos o total é o de sempre; 400 com `campo` nos três;
+isolamento por `usuarioId`.
+
+---
+
+## DEC-158 — a limpeza da suíte alcança toda coleção dos models (Fase 4a)
+
+`TODAS_AS_COLECOES` (`tests/helpers/db.js`) é escrita à mão, e as três
+coleções do Financeiro 2.0 nasceram na F-1a sem entrar nela: `alocacoes`,
+`estornos` e `reparcelamentos` acumulavam no banco de teste (**232, 60 e 16**
+documentos depois de uma rodada da suíte, num banco zerado). E
+`tests/calendar/dec055.test.js` limpava `allocations` e `renegotiations` —
+nomes que não existem, e que o `limparColecoes` pulava em silêncio.
+
+- **Entram na lista as seis coleções que faltavam:** as três do Financeiro
+  2.0 e `events`, `idempotency_keys` e `confirmacoes_visualizacao` (já limpas
+  pelos arquivos que as usam, mas fora da lista). A lista passa a ter as 16
+  coleções dos 16 models.
+- **`dec055.test.js`** limpa os nomes reais.
+- **A trava** (`tests/infra/limpeza.test.js`) lê os MODELS, e não uma
+  segunda lista: toda coleção registrada está na limpeza, nenhuma entrada da
+  lista é nome sem model, e nenhuma lista local de limpeza (`const COLECOES…
+  = [...]`) cita coleção inexistente. Conferida por mutação: tirar
+  `alocacoes` da lista e devolver `allocations` ao `dec055` derruba os dois
+  testes.
+- Depois da suíte, num banco zerado: **todas as 16 coleções com 0**.
+
+## DEC-159 — o teste da guarda de banco vale em qualquer ambiente (Fase 4a)
+
+O subteste "sem `LEX_CONFIRMA_BANCO` e sem terminal, ela ABORTA"
+(`tests/integrity/migracaoFase.test.js`) rodava `migrarFaseProcesso.js`
+contra `MONGO_URI_TESTE` e esperava o ABORT. Só valia com o `lex_test`
+**remoto**: a guarda (`scripts/lib/guardaDeBanco.js`) dispensa a confirmação
+quando o host é local, **por desenho**, e com o `mongod` local o script seguia
+(migrando o banco da suíte) e o teste acusava "Missing expected rejection" —
+a falha de ambiente que a suíte carregava desde a F-0.
+
+**A guarda não mudou.** O teste é que supunha um banco remoto. Agora são três
+subtestes, nenhum dependente de onde a suíte roda e nenhum conectando a banco:
+
+| Subteste | Como | O que exige |
+|---|---|---|
+| host local segue sem perguntar | `exigirConfirmacaoDeBanco` chamada direto, `127.0.0.1` | `{ confirmado, local: true, perguntou: false }`, nada lido da entrada, nada escrito |
+| host remoto, sem a variável e sem terminal, aborta | a função direto, URI remota fictícia (`.invalid`), `process.exit` trocado só durante a chamada | `process.exit(1)`, "ABORT" e "confirmação" no stderr, sem a URI, o host nem a credencial |
+| o script aborta antes de conectar | `migrarFaseProcesso.js` com a URI remota fictícia | código 1, a mensagem da guarda (e não erro de conexão), nada de "banco:" no stdout, sem a URI |
+
+O terceiro é o teste antigo, com a mesma asserção, trocando só o alvo: a
+guarda vem antes do `mongoose.connect`, então nada conecta. **Continua tão
+estrito quanto antes**, e o motivo está escrito no próprio teste. A suíte
+voltou a `fail 0` com o `mongod` local.
+
+---
+
+## DEC-166 — `?clienteId=` em `GET /installments` e `GET /payments` (Fase 4a2)
+
+Só acréscimo; sem o parâmetro as listagens são as de sempre. Serve à aba
+"Financeiro" do detalhe do cliente (DEC-167 do front).
+
+| Rota / parâmetro | Regra | Torto |
+|---|---|---|
+| `GET /installments?clienteId=` | as parcelas dos honorários dos processos em que o cliente tem vínculo **ativo**, principal ou não (o recorte de `GET /processes?clienteId=`, DEC-119); combina com `honorarioId`, `status`, `de`/`ate`, `busca` e `inativos` | não-id ou repetido → 400 `campo: "clienteId"`; cliente de outra advogada → lista vazia, igual à de um id inexistente |
+| `GET /payments?clienteId=` | os pagamentos dos mesmos honorários; combina com `honorarioId`, `formaPagamento`, `tipo`, `de`/`ate` e `busca` | idem |
+
+- A regra mora em `services/financeiroDoCliente.js` (`honorariosDoCliente`):
+  vínculos ativos do cliente (filtrados por `usuarioId`) → processos →
+  honorários. As duas listagens recortam por honorário (`feeId` /
+  `honorarioId`), o mesmo processo que elas exibem na coluna (o do honorário,
+  DEC-102). O recorte vai num `$and` à parte, para combinar com `honorarioId` e
+  com a busca.
+- Processo desativado fica fora: a cascata da DEC-052 derruba o vínculo.
+- `tests/financial/clienteId4a2.test.js` (13); mutação conferida (sem
+  `ativo: true` no vínculo, 5 caem).
+
+**Nota da mesma fase (DEC-161 do front):** os gráficos saíram do Início, e
+`GET /dashboard/honorarios-por-mes` e `GET /dashboard/status` ficaram **sem
+consumidor no front**. As rotas continuam aqui, sem mudança: tirar rota é
+mudar contrato.
+
+## Registro de sessões — original (2026-05)
+
+### Sessão — 2026-05-06
+
+**Resumo:** refatoração e padronização completa do backend.
+
+**Arquivos criados:** `src/middleware/errorMiddleware.js`,
+`src/middleware/notFoundMiddleware.js`
+
+**Decisões tomadas:** soft delete universal via `ativo: false`; paginação
+obrigatória em todos os `GET /`; controllers delegam 100% ao service; dois
+repositórios GitHub separados.
+
+**Commits:** `410657b`, `c5964ee`, `44769f1`, `d7d035e`, `5d4eecc`, `c0752ff`
+
+---
+
+### Sessão — 2026-05-09
+
+**Resumo:** configuração da operação com Claude Code, resolução das duas
+pendências técnicas restantes e rotação de credenciais.
+
+**Decisões tomadas:** validação sempre no service, nunca no controller;
+`CLAUDE.md` versionado junto com o código.
+
+**Commits:** `3bedaf9`, `855aff4`
+
+---
+
+### Sessão — 2026-05-09 (segunda parte)
+
+**Resumo:** estabilização do frontend — correção de todos os módulos para
+compatibilidade com o backend.
+
+**Decisões tomadas:** frontend lê `response.data.data ?? response.data` em
+todas as listagens; `dataPagamento` só vai no payload quando
+`status === "pago"`; payloads explícitos, sem spread de `formData`; populates
+mínimos no backend, só onde há exibição.
+
+**Commits:** `4f6a439`, `642f558`, `57ef774`, `5daa4bd`, `69e389e`, `4d5bf98`
+
+---
+
+### Sessão — 2026-05-12
+
+**Resumo:** correção dos módulos de Pagamentos e Documentos no frontend.
+Todos os módulos principais do frontend estabilizados.
+
+**Decisões tomadas:** `listPayments` e `listDocuments` passam
+`{ page, limit }` como query params; payloads explícitos em `PaymentFormPage`
+e `DocumentFormPage`.
+
+**Commits:** `10a0a5b`, `8f5eb1c`, `0b81ba3`

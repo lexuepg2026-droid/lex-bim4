@@ -1,0 +1,146 @@
+// Atalhos de arranjo: registrar, logar e montar cenários completos.
+//
+// Tudo passa pela API, nunca pelo model direto. Um cenário montado por
+// `insertMany` testaria um estado que a aplicação talvez nunca produza.
+
+import assert from "node:assert/strict";
+import { ClienteApi } from "./client.js";
+import {
+  dadosUsuario,
+  dadosClientePF,
+  dadosClientePJ,
+  dadosProcesso,
+  dadosHonorario,
+  dadosParcela,
+  dadosPagamento,
+  dadosEstorno,
+  dadosReparcelamento,
+  dadosSecao,
+  dadosModelo,
+  SENHA_PADRAO
+} from "./factories.js";
+
+// Falha com o corpo da resposta à vista. Sem isto, um arranjo quebrado aparece
+// como `Cannot read properties of null` trinta linhas adiante.
+export const esperado = (resposta, status, contexto) => {
+  assert.equal(
+    resposta.status,
+    status,
+    `${contexto}: esperado ${status}, veio ${resposta.status} — ` +
+    `${JSON.stringify(resposta.body)}`
+  );
+  return resposta.body;
+};
+
+export const registrarUsuario = async (rotulo = "usuário", extra = {}) => {
+  const cliente = new ClienteApi(rotulo);
+  const payload = dadosUsuario(extra);
+  const resposta = await cliente.post("/auth/register", payload);
+  esperado(resposta, 201, `registro de ${rotulo}`);
+  cliente.usuario = resposta.body.usuario ?? resposta.body;
+  cliente.credenciais = { email: payload.email, senha: payload.senha };
+  return cliente;
+};
+
+export const logar = async (email, senha = SENHA_PADRAO, rotulo = "sessão") => {
+  const cliente = new ClienteApi(rotulo);
+  const resposta = await cliente.post("/auth/login", { email, senha });
+  esperado(resposta, 200, `login de ${rotulo}`);
+  cliente.usuario = resposta.body.usuario;
+  return cliente;
+};
+
+// ── Blocos de cenário ──────────────────────────────────────────────────────
+
+export const criarClientePF = async (api, extra = {}) => {
+  const r = await api.post("/clients", dadosClientePF(extra));
+  return esperado(r, 201, "criação de cliente PF");
+};
+
+export const criarClientePJ = async (api, extra = {}) => {
+  const r = await api.post("/clients", dadosClientePJ(extra));
+  return esperado(r, 201, "criação de cliente PJ");
+};
+
+export const criarProcesso = async (api, clientes, extra = {}) => {
+  const r = await api.post("/processes", dadosProcesso(clientes, extra));
+  return esperado(r, 201, "criação de processo");
+};
+
+export const criarHonorario = async (api, processoId, extra = {}) => {
+  const r = await api.post("/fees", dadosHonorario(processoId, extra));
+  return esperado(r, 201, "criação de honorário");
+};
+
+export const criarParcela = async (api, feeId, numero, extra = {}) => {
+  const r = await api.post("/installments", dadosParcela(feeId, numero, extra));
+  return esperado(r, 201, `criação de parcela ${numero}`);
+};
+
+// ── F-1a: o pagamento nasce contra o HONORÁRIO ─────────────────────────────
+//
+// A resposta do POST deixou de ser o pagamento cru e passou a ser
+// `{ pagamento, alocacoes, sobra, saldoAdiantado }` — a criação executa o motor
+// de alocação e devolve o que ele fez. O helper devolve o envelope INTEIRO, e
+// não só `pagamento`: a maioria dos testes desta fase mede justamente para onde
+// o dinheiro foi, e desembrulhar aqui obrigaria cada um a refazer a consulta.
+export const criarPagamento = async (api, honorarioId, extra = {}) => {
+  const r = await api.post("/payments", dadosPagamento(honorarioId, extra));
+  return esperado(r, 201, "criação de pagamento");
+};
+
+// Estorno de um pagamento. Devolve
+// `{ estorno, desalocacao, valorLiquido, totalEstornado }`.
+export const criarEstorno = async (api, pagamentoId, extra = {}) => {
+  const r = await api.post(`/payments/${pagamentoId}/reversals`, dadosEstorno(extra));
+  return esperado(r, 201, "criação de estorno");
+};
+
+// Anulação de estorno — o estorno-do-estorno. Não leva `valor`: a anulação
+// restaura o valor integral do estorno anulado (ver `reversalValidation.js`).
+export const anularEstorno = async (api, pagamentoId, estornoAnuladoId, extra = {}) => {
+  const r = await api.post(`/payments/${pagamentoId}/reversals`, {
+    estornoAnuladoId,
+    motivo: "Anulação registrada pela suíte de testes",
+    ...extra
+  });
+  return esperado(r, 201, "anulação de estorno");
+};
+
+// Reparcelamento de um honorário.
+export const criarReparcelamento = async (api, honorarioId, parcelas, extra = {}) => {
+  const r = await api.post(
+    `/fees/${honorarioId}/renegotiations`,
+    dadosReparcelamento(parcelas, extra)
+  );
+  return esperado(r, 201, "criação de reparcelamento");
+};
+
+export const criarSecao = async (api, extra = {}) => {
+  const r = await api.post("/secoes", dadosSecao(extra));
+  return esperado(r, 201, "criação de seção");
+};
+
+export const criarModelo = async (api, extra = {}) => {
+  const r = await api.post("/documents/modelos", dadosModelo(extra));
+  return esperado(r, 201, "criação de modelo");
+};
+
+export const vincularSecao = async (api, documentoId, secaoId, ordem) => {
+  const corpo = ordem === undefined ? { secaoId } : { secaoId, ordem };
+  const r = await api.post(`/documents/${documentoId}/secoes`, corpo);
+  return esperado(r, 201, "vínculo de seção");
+};
+
+// `montarCenarioCompleto` foi REMOVIDA na Fase F-0.
+//
+// Montava cliente PF + PJ, processo, honorário, DUAS parcelas, pagamento,
+// seção, modelo e documento gerado, e o comentário afirmava ser "o arranjo que
+// a Parte 3 usa para o usuário A". Não era: `tests/isolation/tenant.test.js`
+// monta o cenário dele inline, com UMA parcela e um texto de seção próprio.
+//
+// O perigo não era o código morto — era o comentário falso. Quem lesse a
+// afirmação e ligasse o helper no teste de isolamento trocaria, sem perceber, a
+// fixture do bloco mais importante da suíte. Os construtores individuais
+// (`criarClientePF`, `criarProcesso`, …) continuam aqui e são o que os testes
+// realmente usam.

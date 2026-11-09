@@ -1,0 +1,557 @@
+import mongoose from "mongoose";
+import Client from "../models/Client.js";
+import Process from "../models/Process.js";
+import Fee, { STATUS_CANCELADO } from "../models/Fee.js";
+import Installment from "../models/Installment.js";
+import Document from "../models/Document.js";
+import Payment from "../models/Payment.js";
+import Reversal from "../models/Reversal.js";
+import ConfirmacaoVisualizacao from "../models/ConfirmacaoVisualizacao.js";
+import { contarNaoVistas } from "./confirmacaoService.js";
+import { CAMPOS_CLIENTE_POPULADO } from "./processoClienteService.js";
+import { nomeExibicaoDoCliente } from "../utils/nomeExibicao.js";
+import { processosComClienteNaoLiberado } from "./liberacaoNoPortal.js";
+
+const toCountMap = (arr) =>
+  arr.reduce((acc, { _id, count }) => ({ ...acc, [_id]: count }), {});
+
+// Mesma função de `financeiroService.js`, pelo mesmo motivo: soma de float
+// acumula resíduo, e resíduo num painel financeiro é a advogada lendo
+// "em aberto: R$ 0,00000000001".
+const emCentavos = (n) => Math.round(Number(n || 0) * 100) / 100;
+
+const somar = (itens, campo) =>
+  emCentavos(itens.reduce((acc, item) => acc + Number(item[campo] || 0), 0));
+
+// Quantas parcelas o resumo mostra em "próximos vencimentos". Quem precisa da
+// lista inteira abre `/parcelas`, que já existe e é paginada.
+//
+// Eram 5. Fase 3.2 (DEC-105): as "Datas próximas" do Início mostram até 8
+// linhas, juntando vencimentos e compromissos, e com 5 o sexto vencimento
+// sumia antes do oitavo compromisso.
+const PROXIMOS_VENCIMENTOS = 8;
+
+export const getSummary = async (usuarioId) => {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  const [
+    processosAtivos,
+    clientesCadastrados,
+    honorariosAReceber,
+    parcelasVencidas,
+    documentosCadastrados,
+    pagamentosResult,
+    // Contador de confirmações de visualização não vistas (Fase 3.1).
+    //
+    // Entra AQUI, no resumo que já existe, e não em rota nova: é mais um
+    // número do mesmo painel, sai da mesma consulta paralela, e uma rota
+    // própria obrigaria a tela a fazer duas chamadas para desenhar um cabeçalho.
+    // Apoiado pelo índice { usuarioId, vistaPelaAdvogada }.
+    //
+    // A consulta vem de `confirmacaoService.contarNaoVistas` desde a Fase F-0.
+    // Estava escrita à mão aqui, idêntica à função que já existia e que a
+    // auditoria de retomada encontrou SEM NENHUMA referência — as duas únicas
+    // ocorrências de `contarNaoVistas` no repositório eram a definição e o
+    // `export default`. Duas fórmulas para a mesma pergunta divergem; o dia em
+    // que "não vista" ganhar uma condição a mais, só uma delas saberia.
+    confirmacoesNaoVistas
+  ] = await Promise.all([
+    Process.countDocuments({ usuarioId, status: "ativo", ativo: true }),
+    Client.countDocuments({ usuarioId, ativo: true }),
+    // "Honorários em aberto" (Fase 0, DEC-069). Era só `pendente` — os que
+    // nunca receberam nada —, e o `parcialmente_pago`, que ainda tem o que
+    // receber, ficava de fora. O nome do campo não muda: é contrato da rota.
+    Fee.countDocuments({
+      usuarioId,
+      status: { $in: ["pendente", "parcialmente_pago"] },
+      ativo: true
+    }),
+    Installment.countDocuments({ usuarioId, status: "vencido", ativo: true }),
+    Document.countDocuments({ usuarioId, ativo: true }),
+    Payment.aggregate([
+      {
+        $match: {
+          usuarioId,
+          ativo: true,
+          data: { $gte: startOfMonth, $lte: endOfMonth }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$valor" }
+        }
+      }
+    ]),
+    contarNaoVistas(usuarioId)
+  ]);
+
+  const [confirmacoesNovasPorProcesso, naoLiberados] = await Promise.all([
+    contarNaoVistasPorProcesso(usuarioId),
+    processosComClienteNaoLiberado(usuarioId)
+  ]);
+
+  return {
+    processosAtivos,
+    clientesCadastrados,
+    honorariosAReceber,
+    parcelasVencidas,
+    documentosCadastrados,
+    pagamentosRecebidosMes: pagamentosResult[0]?.total ?? 0,
+    confirmacoesNaoVistas,
+    // Fase 3.2 (DEC-104) — chaves NOVAS; as de cima não mudaram.
+    confirmacoesNovasPorProcesso,
+    // Fase 3.3 (DEC-108): conta PROCESSOS distintos (era vínculos), e o id
+    // vem quando há exatamente um, para o Início abrir o processo direto.
+    processosNaoLiberados: naoLiberados.length,
+    processoNaoLiberadoId: naoLiberados.length === 1 ? naoLiberados[0] : null
+  };
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AS DUAS CHAVES DA FASE 3.2 EM `GET /dashboard` (DEC-104)
+//
+// ── `confirmacoesNovasPorProcesso` ───────────────────────────────────────
+// O cartão "Confirmações novas" dizia quantas, e não de QUEM. Para levar a
+// advogada direto ao processo (um só) ou a uma lista curta (vários), a tela
+// precisa do recorte por processo. Mesma condição de `contarNaoVistas` —
+// `vistaPelaAdvogada: false` —, agrupada, até 10, pela confirmação mais
+// recente. Só processos ATIVOS: o destino do clique é a ficha, e a ficha de
+// um processo desativado responde 404. Por isso a soma das quantidades pode
+// ser menor que `confirmacoesNaoVistas` (a confirmação não cascateia).
+//
+// ── `processosNaoLiberados` e `processoNaoLiberadoId` ─────────────────────
+// PROCESSOS distintos com pelo menos um vínculo ATIVO de cliente que TEM
+// acesso ao portal (senha definida, a mesma regra do `temAcessoPortal` de
+// `processoClienteService`) e `liberadoNoPortal: false`; cliente e processo
+// ativos — a cascata da desativação já derruba o vínculo, e a conferência é
+// rede.
+//
+// **Fase 3.3 (DEC-108):** na 3.2 a contagem era por VÍNCULO, e o cartão do
+// Início dizia "processos" — um processo com dois clientes de portal não
+// liberados contava 2. Mudança de semântica autorizada (o campo nasceu na 3.2
+// e só o Início o lê). `processoNaoLiberadoId` (novo) vem só quando há
+// exatamente um processo, para o cartão abrir a ficha onde mora o
+// interruptor.
+// ═══════════════════════════════════════════════════════════════════════════
+const LIMITE_CONFIRMACOES_POR_PROCESSO = 10;
+
+const contarNaoVistasPorProcesso = async (usuarioId) => {
+  const uid = new mongoose.Types.ObjectId(usuarioId);
+  const grupos = await ConfirmacaoVisualizacao.aggregate([
+    { $match: { usuarioId: uid, vistaPelaAdvogada: false } },
+    { $group: { _id: "$processoId", quantidade: { $sum: 1 }, maisRecente: { $max: "$dataHora" } } }
+  ]);
+  if (grupos.length === 0) return [];
+
+  const processos = await Process.find({
+    _id: { $in: grupos.map((g) => g._id) },
+    usuarioId: uid,
+    ativo: true
+  }).select("numeroProcesso titulo");
+  const porId = new Map(processos.map((p) => [String(p._id), p]));
+
+  return grupos
+    .filter((g) => porId.has(String(g._id)))
+    .sort((a, b) => b.maisRecente - a.maisRecente || String(a._id).localeCompare(String(b._id)))
+    .slice(0, LIMITE_CONFIRMACOES_POR_PROCESSO)
+    .map((g) => {
+      const p = porId.get(String(g._id));
+      return {
+        processoId: p._id,
+        numeroProcesso: p.numeroProcesso ?? null,
+        titulo: p.titulo ?? null,
+        quantidade: g.quantidade
+      };
+    });
+};
+
+// Fase 3.4 (DEC-115): a regra saiu para `liberacaoNoPortal.js`, onde a lista
+// de processos (`?portal=nao_liberado`) também a usa — o cartão e a lista
+// precisam contar o mesmo.
+
+export const getStatusCounts = async (usuarioId) => {
+  const groupByStatus = { _id: "$status", count: { $sum: 1 } };
+
+  const [processResults, feeResults, installmentResults] = await Promise.all([
+    Process.aggregate([
+      { $match: { usuarioId, ativo: true } },
+      { $group: groupByStatus }
+    ]),
+    Fee.aggregate([
+      { $match: { usuarioId, ativo: true } },
+      { $group: groupByStatus }
+    ]),
+    Installment.aggregate([
+      { $match: { usuarioId, ativo: true } },
+      { $group: groupByStatus }
+    ])
+  ]);
+
+  return {
+    processos:  toCountMap(processResults),
+    honorarios: toCountMap(feeResults),
+    parcelas:   toCountMap(installmentResults)
+  };
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RESUMO FINANCEIRO GLOBAL — `GET /api/financeiro/resumo`
+//
+// A Fase 4.3 fecha a promessa da DEC-028(d): além dos três acumulados que já
+// existiam, o resumo passa a expor o recorte do MÊS (a receber e recebido), o
+// VALOR total vencido (havia só a contagem) e os próximos vencimentos.
+//
+// ── A cadeia é filtrada como a da ficha, e esse é o ponto ────────────────────
+// A ficha financeira do processo (Fase 4.1) é o contrato publicado. O resumo é
+// o mesmo dinheiro visto de cima, e portanto:
+//
+//   Process   ativo: true
+//     └ Fee   ativo: true  E  status ≠ cancelado
+//        └ Installment  ativo: true
+//           └ Payment   ativo: true
+//
+// **Como estava antes desta fase, os dois números não fechavam.** O resumo
+// somava honorário cancelado em `valorContratado`, somava os pagamentos das
+// parcelas dele em `recebido`, e somava honorário de processo desativado — que
+// nenhuma ficha mostra, porque a ficha de processo desativado responde 404. A
+// advogada podia abrir as dez fichas, somar na calculadora e não chegar ao
+// número do painel. Quem se ajustou foi o resumo: a ficha não muda.
+//
+// ── `pendente` é Σ POR HONORÁRIO de `max(0, contratado − pago)` ────────────
+// A ficha calcula o em aberto de cada honorário como `fee.valor − pago`, com
+// piso zero (DEC-040), e NÃO como a soma do que falta nas parcelas. A diferença
+// aparece no honorário que ainda não foi parcelado por inteiro: 3.000
+// contratados com uma parcela de 1.000 emitida têm 3.000 em aberto na ficha e
+// teriam 1.000 pela outra fórmula. Duas fórmulas para a mesma pergunta divergem
+// — e a que vale é a publicada.
+//
+// O que a DEC-040 mudou aqui foi o NÍVEL da soma, não a fórmula: era uma
+// subtração global (`contratado − recebido − saldoAdiantado`), que não conhece
+// a fronteira entre honorários e deixava o crédito de um abater a dívida de
+// outro. Agora soma honorário a honorário, cada um com piso.
+//
+// ── `recebidoNoMes` sai de Payment, não de Installment ─────────────────────
+// `Installment.dataPagamento` é a data em que a parcela FECHOU. Um pagamento
+// de julho numa parcela vencida em maio precisa contar em julho, que é quando
+// o dinheiro entrou — é disso que a advogada precisa para saber o que recebeu
+// no mês. Por isso a fonte é `Payment.data`, restrita aos HONORÁRIOS da cadeia
+// acima (F-1a: a âncora do pagamento deixou de ser a parcela) e LÍQUIDA dos
+// estornos do próprio pagamento.
+//
+// ── AS MUDANÇAS DE CONTRATO, e o que a F-1a.1 corrigiu ───────────────────
+// 1. `saldoAdiantado` é chave de primeiro nível desde a F-1a. São dez.
+// 2. `pendente` passou por DUAS formas. A F-1a o fez
+//    `contratado − recebido − saldoAdiantado`, para fechar com a soma das
+//    fichas; a F-1a.1 (DEC-040) o refez como Σ por honorário de
+//    `max(0, contratado − pago)`, porque a forma anterior carregava o mesmo
+//    defeito da ficha — crédito de um honorário abatendo dívida de outro.
+//    As duas fecham com as fichas; só a segunda descreve a dívida real.
+// 3. `saldoAdiantado` deixou de entrar em conta nenhuma: sai nomeado.
+// ═══════════════════════════════════════════════════════════════════════════
+export const getFinanceiroResumo = async (usuarioId, { mes: mesPedido } = {}) => {
+  const uid = new mongoose.Types.ObjectId(usuarioId);
+
+  // ── As fronteiras do mês são em UTC, e isso é deliberado ──────────────────
+  // `dataVencimento` e `dataPagamento` são datas SEM hora: chegam como
+  // `"2026-08-31"` e o Mongoose as grava em meia-noite UTC. O frontend as
+  // renderiza com `timeZone: "UTC"` (`utils/formatters.js`), justamente para
+  // não exibir 30/08 numa parcela gravada como 31.
+  //
+  // Recortar o mês no fuso LOCAL do servidor jogaria a parcela de 01/09 para
+  // dentro de agosto num servidor a oeste de Greenwich — e a advogada leria,
+  // no cartão "A receber em agosto", uma linha datada de setembro. O recorte
+  // segue o mesmo fuso em que o dado foi gravado e é exibido.
+  //
+  // ── O mês ESCOLHIDO e o HOJE são duas coisas (Fase 3.1, DEC-098) ──────────
+  // `?mes=AAAA-MM` (já validado por `filtroMesReferencia`) muda SÓ o recorte
+  // do mês: `aReceberNoMes`, `recebidoNoMes` e o `mesReferencia` que os
+  // rotula. Ausente, o mês é o corrente do servidor, como sempre foi.
+  //
+  // O que NÃO muda com `mes`, e por quê — está tudo abaixo de `hoje`, e não
+  // de `inicioDoMes`:
+  //   - `valorContratado`, `recebido`, `pendente`, `saldoAdiantado`: são
+  //     ACUMULADOS do escritório até agora;
+  //   - `vencidas` e `valorVencido`: "vencido" é o status de HOJE (o que a
+  //     advogada precisa cobrar agora), e não o de um mês passado — o sistema
+  //     nem guarda o status que uma parcela tinha em julho;
+  //   - `proximosVencimentos`: "próximos" é sempre a partir de hoje; próximos
+  //     de um mês passado não fazem sentido.
+  const agora = new Date();
+  const ano = mesPedido ? mesPedido.ano : agora.getUTCFullYear();
+  const mes = mesPedido ? mesPedido.mes : agora.getUTCMonth();
+
+  const inicioDoMes = new Date(Date.UTC(ano, mes, 1));
+  const fimDoMes = new Date(Date.UTC(ano, mes + 1, 0, 23, 59, 59, 999));
+  // Meia-noite de hoje: uma parcela que vence HOJE ainda é próximo
+  // vencimento, e comparar com o instante atual a jogaria para o passado ao
+  // meio-dia. Sempre do relógio, nunca do mês escolhido.
+  const hoje = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate()));
+
+  // `"2026-07"`. Vai na resposta para a tela rotular os cartões sem adivinhar
+  // o mês: sem ele o frontend teria de recalcular o recorte por conta própria,
+  // e "A receber em julho" com o número de agosto é pior do que rótulo nenhum.
+  // Com `?mes=`, é o mês EFETIVAMENTE usado — o pedido, já validado.
+  const mesReferencia = `${ano}-${String(mes + 1).padStart(2, "0")}`;
+
+  // ── 1. Processos ativos ───────────────────────────────────────────────────
+  // Fase 3.2 (DEC-105): o cliente principal vem junto, para as "Datas
+  // próximas" do Início dizerem de quem é o vencimento (apontamentos 3 e 4).
+  const processos = await Process.find({ usuarioId: uid, ativo: true })
+    .select("numeroProcesso clientePrincipalId")
+    .populate("clientePrincipalId", CAMPOS_CLIENTE_POPULADO);
+  const processoIds = processos.map((p) => p._id);
+  const numeroPorProcesso = new Map(
+    processos.map((p) => [String(p._id), p.numeroProcesso ?? null])
+  );
+  const clientePorProcesso = new Map(
+    processos.map((p) => [String(p._id), nomeExibicaoDoCliente(p.clientePrincipalId) || null])
+  );
+
+  // ── 2. Honorários vigentes desses processos ───────────────────────────────
+  // `cancelado` fica fora de TUDO: contratado, recebido, em aberto, vencido e
+  // próximos vencimentos. A cobrança foi desfeita.
+  const honorarios = await Fee.find({
+    usuarioId: uid,
+    ativo: true,
+    status: { $ne: STATUS_CANCELADO },
+    processoId: { $in: processoIds }
+  }).select("valor descricao processoId saldoAdiantado");
+
+  const feeIds = honorarios.map((f) => f._id);
+  const honorarioPorId = new Map(honorarios.map((f) => [String(f._id), f]));
+
+  // ── 3. Parcelas desses honorários ─────────────────────────────────────────
+  // TODAS, inclusive as canceladas por reparcelamento: o `valorPago` delas é
+  // dinheiro recebido (DEC-037) e entra em `recebido` e no pago por honorário
+  // que sustenta `pendente`, como na ficha. Quem as tira é o recorte de
+  // VENCIMENTO, mais abaixo (DEC-068).
+  const parcelas = await Installment.find({
+    usuarioId: uid,
+    ativo: true,
+    feeId: { $in: feeIds }
+  // `totalParcelas` entrou na DEC-048: o cartão de próximos vencimentos passa
+  // a dizer "Parcela 1 de 3" como as demais telas. Só o CONGELADO — o cartão
+  // atravessa honorários e não tem como contar o plano vigente de cada um.
+  }).select("feeId numeroParcela totalParcelas valor valorPago dataVencimento status");
+
+  const linhas = parcelas.map((parcela) => {
+    const fee = honorarioPorId.get(String(parcela.feeId));
+    const processoId = fee?.processoId ?? null;
+    return {
+      _id: parcela._id,
+      // `descricaoHonorario` e não `descricao`: a tela lista PARCELAS, e o
+      // nome que a advogada reconhece é o da cobrança de origem.
+      descricaoHonorario: fee?.descricao ?? null,
+      // O ID da cobrança, para o nome dela virar LINK no dashboard (F-1b). O
+      // honorário já está carregado aqui — mandar só o texto obrigava a tela a
+      // exibir um nome sem caminho para o registro que o explica.
+      honorarioId: fee?._id ?? null,
+      numeroParcela: parcela.numeroParcela,
+      totalParcelas: parcela.totalParcelas ?? null,
+      valor: parcela.valor,
+      valorPago: parcela.valorPago ?? 0,
+      // Piso em zero (DEC-040), pelo mesmo motivo da ficha: `PATCH
+      // /installments/:id { valor }` aceita reduzir o valor da parcela depois
+      // de ela ter recebido alocação. Sem o piso, a parcela negativa abateria
+      // `aReceberNoMes` e `valorVencido` — indicadores que a advogada usa para
+      // decidir a quem cobrar.
+      emAberto: Math.max(0, emCentavos(Number(parcela.valor) - Number(parcela.valorPago || 0))),
+      dataVencimento: parcela.dataVencimento,
+      status: parcela.status,
+      // Vem do HONORÁRIO, e não do `processoId` desnormalizado da parcela,
+      // pelo mesmo motivo da ficha: mover a parcela de honorário reescreve
+      // aquele campo, e a resposta dependeria de a reescrita nunca ter falhado.
+      processoId,
+      numeroProcesso: processoId ? numeroPorProcesso.get(String(processoId)) ?? null : null,
+      // Fase 3.2 (DEC-105) — campo NOVO, `null` quando não há nome.
+      clientePrincipalNome: processoId ? clientePorProcesso.get(String(processoId)) ?? null : null
+    };
+  });
+
+  // ── 4. Pagamentos do mês, pela data em que o dinheiro entrou ──────────────
+  //
+  // A âncora mudou na F-1a: o pagamento nasce contra o HONORÁRIO, então o
+  // recorte da cadeia é `honorarioId`, e não mais a lista de parcelas. Um
+  // adiantamento não tem parcela nenhuma e continuava sendo dinheiro que
+  // entrou no mês — pelo filtro antigo ele sumiria do cartão.
+  //
+  // ── LÍQUIDO DE ESTORNOS DO PRÓPRIO PAGAMENTO ────────────────────────────
+  // O cartão responde "quanto entrou neste mês e ficou". Um pagamento de 1.000
+  // em agosto, estornado em 300, contribui com 700 — mesmo que o estorno seja
+  // de setembro: o abatimento segue o PAGAMENTO, que é a coisa datada de
+  // agosto. Contar o bruto faria a advogada fechar o mês com dinheiro que
+  // devolveu; datar o abatimento pelo estorno faria agosto mudar de valor
+  // conforme setembro, e um mês fechado não pode se mexer.
+  const pagamentosDoMes = await Payment.find({
+    usuarioId: uid,
+    ativo: true,
+    honorarioId: { $in: feeIds },
+    data: { $gte: inicioDoMes, $lte: fimDoMes }
+  }).select("valor");
+
+  const estornosDoMes = await Reversal.find({
+    usuarioId: uid,
+    pagamentoId: { $in: pagamentosDoMes.map((p) => p._id) }
+  }).select("pagamentoId valor estornoAnuladoId");
+
+  // "Estorno ativo" = o que ninguém anulou. A regra tem UM dono
+  // (`reversalService`), e a forma é a mesma aqui: os de anulação não são
+  // débito, e o que eles apontam deixa de ser.
+  const anulados = new Set(
+    estornosDoMes.filter((e) => e.estornoAnuladoId).map((e) => String(e.estornoAnuladoId))
+  );
+  const estornadoPorPagamento = new Map();
+  for (const e of estornosDoMes) {
+    if (e.estornoAnuladoId) continue;
+    if (anulados.has(String(e._id))) continue;
+    const chave = String(e.pagamentoId);
+    estornadoPorPagamento.set(
+      chave,
+      emCentavos((estornadoPorPagamento.get(chave) ?? 0) + Number(e.valor))
+    );
+  }
+
+  const recebidoNoMes = emCentavos(
+    pagamentosDoMes.reduce(
+      (t, p) => t + Number(p.valor) - (estornadoPorPagamento.get(String(p._id)) ?? 0),
+      0
+    )
+  );
+
+  const contratado = somar(honorarios, "valor");
+  // `recebido` continua sendo o ALOCADO líquido: `Installment.valorPago` é
+  // reescrito pelo recálculo a partir das alocações ativas (F-1a), então este
+  // número já é líquido de estorno sem precisar de segunda conta.
+  const recebido = somar(parcelas, "valorPago");
+  // Dinheiro que entrou e ainda não achou parcela. Sai NOMEADO, e desde a
+  // DEC-040 não entra em conta nenhuma: não é recebido (não quitou obrigação)
+  // e não abate em aberto (é crédito, não pagamento).
+  const saldoAdiantado = somar(honorarios, "saldoAdiantado");
+
+  // ── `pendente` é somado POR HONORÁRIO, com piso (DEC-040) ───────────────
+  //
+  // Era `contratado − recebido − saldoAdiantado`, uma subtração global. Ela
+  // carrega o mesmo defeito que a ficha tinha: a conta global não conhece a
+  // fronteira entre honorários, e o crédito de um abate a dívida de outro.
+  //
+  // Somar por honorário, cada um já com piso zero, é o que faz este número
+  // continuar batendo com a soma das fichas — a igualdade que a Fase 4.3
+  // existiu para garantir e que `tests/financial/resumo.test.js` trava
+  // somando as fichas de verdade, processo a processo.
+  const pagoPorFee = new Map();
+  for (const parcela of parcelas) {
+    const chave = String(parcela.feeId);
+    pagoPorFee.set(
+      chave,
+      emCentavos((pagoPorFee.get(chave) ?? 0) + Number(parcela.valorPago || 0))
+    );
+  }
+
+  const pendente = emCentavos(
+    honorarios.reduce(
+      (total, fee) =>
+        total +
+        Math.max(0, emCentavos(Number(fee.valor) - (pagoPorFee.get(String(fee._id)) ?? 0))),
+      0
+    )
+  );
+
+  // ── A parcela CANCELADA não é vencimento (Fase 0, DEC-068) ───────────────
+  // O filtro do honorário cancelado (passo 2) não a alcança: a parcela
+  // cancelada por REPARCELAMENTO pertence a um honorário VIGENTE. Ela entrava
+  // em `proximosVencimentos` e em `aReceberNoMes` com o valor cheio — o Início
+  // listava como próxima uma cobrança que a advogada substituiu.
+  //
+  // O recorte é AQUI, e não na consulta: na consulta ele tiraria também o
+  // `valorPago` da parcela PARCIAL reparcelada, e `recebido`/`pendente`
+  // deixariam de fechar com a ficha (há teste para os dois lados).
+  const aVencer = linhas.filter((l) => l.status !== "cancelado");
+
+  const noMes = aVencer.filter(
+    (l) => l.dataVencimento >= inicioDoMes && l.dataVencimento <= fimDoMes
+  );
+  const vencidasLinhas = linhas.filter((l) => l.status === "vencido");
+
+  const proximosVencimentos = aVencer
+    .filter((l) => l.emAberto > 0 && l.dataVencimento >= hoje)
+    .sort((a, b) => a.dataVencimento - b.dataVencimento || a.numeroParcela - b.numeroParcela)
+    .slice(0, PROXIMOS_VENCIMENTOS);
+
+  return {
+    // Os três acumulados que a Fase 4.2 já consome. Os nomes não mudam —
+    // mudou o que entra na conta, para fecharem com as fichas.
+    valorContratado: contratado,
+    recebido,
+    pendente,
+    saldoAdiantado,
+    // Contagem de parcelas vencidas, como sempre. Agora acompanhada do valor.
+    vencidas: vencidasLinhas.length,
+
+    // ── DEC-028(d) ──────────────────────────────────────────────────────────
+    mesReferencia,
+    aReceberNoMes: somar(noMes, "emAberto"),
+    recebidoNoMes,
+    valorVencido: somar(vencidasLinhas, "emAberto"),
+    proximosVencimentos
+  };
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HONORÁRIOS CONTRATADOS POR MÊS — `GET /api/dashboard/honorarios-por-mes`
+//
+// Soma `Fee.valor` agrupando por `createdAt`: é o valor CONTRATADO, pelo mês em
+// que a cobrança foi cadastrada. Não é recebimento — quem responde isso é
+// `recebidoNoMes`, no resumo financeiro.
+//
+// **Honorário `cancelado` fica de fora (Fase 4.4).** Era um achado reportado e
+// não corrigido na 4.3: o gráfico somava o cancelado enquanto o
+// `valorContratado` do resumo passou a excluí-lo, e o título da barra dizia
+// "Honorários contratados". Os dois números falavam do mesmo assunto, na mesma
+// tela, e não fechavam — a advogada podia ler no cartão um contratado menor do
+// que a soma das barras logo abaixo.
+//
+// A regra é a mesma da DEC-028 e da ficha da 4.1: a cobrança foi desfeita, e
+// somá-la faria ela ler como contratado um valor que ela mesma cancelou.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ── A janela TERMINA no mês escolhido (Fase 3.1, DEC-098) ─────────────────
+// Seis meses, o último sendo o de `?mes=` (ou o corrente). É uma série
+// mensal: "seguir o mês" significa olhar os seis meses que levam até ele.
+// As bordas são em UTC, como o resto do financeiro — eram em fuso local, e o
+// `$month` do agrupamento sempre foi UTC: num servidor a oeste de Greenwich o
+// primeiro dia da janela caía no mês errado.
+export const MESES_DO_GRAFICO = 6;
+
+export const getFeesByMonth = async (usuarioId, { mes: mesPedido } = {}) => {
+  const agora = new Date();
+  const ano = mesPedido ? mesPedido.ano : agora.getUTCFullYear();
+  const mes = mesPedido ? mesPedido.mes : agora.getUTCMonth();
+  const inicioDaJanela = new Date(Date.UTC(ano, mes - (MESES_DO_GRAFICO - 1), 1));
+  const fimDaJanela = new Date(Date.UTC(ano, mes + 1, 0, 23, 59, 59, 999));
+
+  const results = await Fee.aggregate([
+    {
+      $match: {
+        usuarioId,
+        ativo: true,
+        status: { $ne: STATUS_CANCELADO },
+        createdAt: { $gte: inicioDaJanela, $lte: fimDaJanela }
+      }
+    },
+    {
+      $group: {
+        _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
+        total: { $sum: "$valor" }
+      }
+    },
+    { $sort: { "_id.year": 1, "_id.month": 1 } }
+  ]);
+
+  return results.map(({ _id, total }) => ({
+    mes: `${_id.year}-${String(_id.month).padStart(2, "0")}`,
+    total
+  }));
+};
