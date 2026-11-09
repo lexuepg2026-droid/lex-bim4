@@ -244,9 +244,10 @@ function SecoesLista() {
                                     rows={8}
                                     value={form.texto}
                                     onChange={handleChange}
+                                    aria-describedby="apoio-secao-texto"
                                     required
                                 />
-                                <small className="notaCampo">As variáveis são trocadas pelos dados do cliente, do processo e do escritório quando o documento é gerado. Use só as da lista abaixo: nomes diferentes são recusados ao salvar.</small>
+                                <small className="notaCampo" id="apoio-secao-texto">As variáveis são trocadas pelos dados do cliente, do processo e do escritório quando o documento é gerado. Use só as da lista abaixo: nomes diferentes são recusados ao salvar.</small>
                             </div>
 
                             {catalogo.length > 0 && (

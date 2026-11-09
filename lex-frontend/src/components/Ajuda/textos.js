@@ -105,7 +105,7 @@ export const AJUDA = {
     },
     secaoVariaveis: {
         assunto: "variáveis no texto",
-        texto: "Clique numa variável da lista para inserir no texto, no lugar do cursor. Uma seção usada em algum documento não pode ser excluída.",
+        texto: "A seção guarda o texto com as chaves; os dados entram só na hora de gerar. Mudar uma seção não muda os documentos já gerados, só os que você gerar ou regerar depois. Uma seção usada em algum documento não pode ser excluída.",
     },
     gerar: {
         assunto: "gerar documento",
