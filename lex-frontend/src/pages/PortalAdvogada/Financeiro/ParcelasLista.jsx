@@ -208,7 +208,7 @@ function ParcelasLista() {
             {carregando ? (
                 <p className="infoSecundariaDetalhe">Carregando...</p>
             ) : parcelas.length === 0 ? (
-                !erro && <EmptyState titulo="Nenhuma parcela encontrada." descricao="Ajuste os filtros ou cadastre uma nova parcela." />
+                !erro && <EmptyState titulo="Nenhuma parcela encontrada." descricao="Ajuste os filtros ou cadastre uma em &quot;+ Nova parcela&quot;." />
             ) : (
                 <ul className="listaParcelas financeiroTabela financeiroTabela--parcelas">
                     <li className="itemParcela financeiroTabelaCabecalho" aria-hidden="true">
