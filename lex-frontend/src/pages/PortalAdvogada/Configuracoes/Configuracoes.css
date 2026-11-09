@@ -143,3 +143,10 @@
         margin-top: 1rem;
     }
 }
+
+/* "Como usar" (DEC-172): uma linha por item, com o espaçamento das notas dela. */
+.comoUsarLista {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
