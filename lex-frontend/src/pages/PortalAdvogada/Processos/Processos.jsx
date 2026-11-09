@@ -28,6 +28,7 @@ function Processos() {
     const [processos, setProcessos] = useState([]);
     const [total, setTotal] = useState(0);
     const [carregando, setCarregando] = useState(true);
+    const [primeiraCarga, setPrimeiraCarga] = useState(true);
     const [erro, setErro] = useState("");
 
     const [modalExcluir, setModalExcluir] = useState({ aberto: false, id: null, mensagem: "" });
@@ -129,7 +130,10 @@ function Processos() {
         } catch (err) {
             if (numero === ultimaBusca.current) setErro(getApiErrorMessage(err, "Falha ao buscar processos."));
         } finally {
-            if (numero === ultimaBusca.current) setCarregando(false);
+            if (numero === ultimaBusca.current) {
+                setCarregando(false);
+                setPrimeiraCarga(false);
+            }
         }
     };
 
@@ -239,8 +243,11 @@ function Processos() {
 
     const abrirDetalhe = (id) => navigate(`/processos/detalhes/${id}`);
 
-    // O Loading fica na área da lista, e não no lugar da tela: a tela inteira
-    // desmontava a cada busca e o campo de busca perdia o foco (fase R2).
+    // Na primeira carga ainda não existe busca digitada: a tela inteira dá lugar
+    // ao Loading, como no desenho dela (R4). Nas buscas seguintes o Loading fica
+    // na área da lista, e não no lugar da tela: a tela inteira desmontava a cada
+    // busca e o campo de busca perdia o foco (fase R2).
+    if (primeiraCarga) return <Loading />;
 
     return (
         <div className="tela telaProcessos">

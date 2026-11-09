@@ -546,6 +546,16 @@
     .financeiroSecao .linhaFiltros .select {
         flex: 1 1 100%;
     }
+
+    /* R4: as duas datas do período passavam 22 px da seção a 360 px. */
+    .filtroPeriodo {
+        flex-wrap: wrap;
+    }
+
+    .filtroPeriodo input[type="date"] {
+        flex: 1 1 8rem;
+        min-width: 0;
+    }
 }
 
 .filtroPeriodo {

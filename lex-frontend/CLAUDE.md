@@ -143,22 +143,71 @@ motivo escrito, só a sugestão do próximo número da parcela, a marcação de
 confirmações vistas e o sino. Travas em `tests/toast.test.js` e
 `tests/listas.test.js`.
 
-## DEC-170 — as larguras mínimas das telas públicas e do portal (fase R2)
+## DEC-170 — as larguras mínimas das telas públicas e do portal (fase R2, refeita na R4)
 
 A 360 px as telas públicas rolavam 24 px de lado e o portal deixava 150 px para
-o texto (auditoria de paridade, C.1). A correção é a mínima, sem redesenho:
+o texto (auditoria de paridade, C.1).
 
-- **Telas públicas:** as cinco larguras fixas de 24 rem viraram
-  `min(24rem, 100%)` (`Login.css`: `input.login`, `.buttonLogin`, `.erroLogin`,
-  `.infoLogin`; `LayoutAutenticacao.css`: `.direitaAutenticacao a`). Acima de
-  384 px nada muda.
+**O que a R2 fez e a R4 desfez:** as cinco larguras de 24 rem viraram
+`min(24rem, 100%)`. No desktop o contêiner se ajusta ao conteúdo, os 100%
+resolviam para a largura do texto e os botões encolheram ("Acompanhe seu
+processo" estourava o botão). A R4 voltou o `width: 24rem` dela.
+
+**Como ficou (R4), só com `@media`, sem mudar nada a partir de 601 px:**
+
+- **Telas públicas:** `width: 24rem` como no original (`Login.css`:
+  `input.login`, `.buttonLogin`, `.erroLogin`, `.infoLogin`;
+  `LayoutAutenticacao.css`: `.direitaAutenticacao a`). Abaixo de 420 px, 100%.
+  Abaixo de 600 px, uma coluna: o painel do logo vai para o topo (mesmos
+  tokens, arredondamento embaixo, logo de 10 rem) e o `main` ocupa a coluna
+  até 24 rem.
 - **Portal:** abaixo de 600 px, `.cardPortal` e `.cardPortal.cardPortalLargo`
   ocupam 100% com padding de 1,5 rem × 1 rem, e `.secaoPortal` fica com 1 rem
   (`Portal.css` e `ProcessoPortal.css`, cada arquivo com a `@media` das
-  próprias classes, para a ordem do bundle não desfazer a regra);
-  `.botoesDocumentoPortal` e `.acoesCabecalhoPortal` ganharam `flex-wrap`.
+  próprias classes, para a ordem do bundle não desfazer a regra); o
+  `flex-wrap` de `.botoesDocumentoPortal` e `.acoesCabecalhoPortal` passou para
+  dentro dessa `@media` na R4.
+- **Toast:** `max-width: 24rem` como o dela; `calc(100vw - 3rem)` só abaixo de
+  480 px.
 
-Conferido a 360, 390 e 412 px (capturas `C1-depois-*`).
+Conferido a 360, 390 e 412 px, e a comparação do desktop com o original dela
+(DEC-171) dá diferença zero nas telas públicas.
+
+## DEC-171 — fidelidade visual (fase R4, 09/11/2026)
+
+**Decisão do Daniel**, depois de duas quebras em produção que a validação da R2
+não viu (ela media só rolagem lateral e elementos fora do pai, e nunca comparou
+a tela com o original):
+
+- **Fidelidade visual:** toda mudança de CSS ou de JSX visível é validada pela
+  comparação imagem a imagem com o original da Raniele (linha de base em
+  `~/LEX/auditoria-raniv2/capturas/r4/base/`), em 1280, 1366, 1440 e 1920 px,
+  nos dois temas.
+- **Diferença no desktop só é aceita se for um item pedido.**
+- **Correção de celular só dentro de `@media (max-width: …)`**, e ela não pode
+  alterar nada a partir de 1024 px.
+- **Defeito do original dela no desktop** (o mesmo defeito aparece na captura
+  dela) é corrigido com o mínimo, no estilo dela, e registrado.
+- **Na dúvida entre corrigir e deixar como ela fez,** vale o que ela fez, e a
+  dúvida vai para o relatório.
+
+**Como comparar:** os dois builds de produção (`VITE_API_URL=/api`), o original
+(`~/LEX/auditoria-raniv2/norm/front/`) e o `main`, servidos pelo servidor local
+que imita o Render, cada um numa porta, contra o mesmo back e o mesmo banco
+(`seed:banca3 --hoje 2026-11-09`); Chrome headless no fuso
+`America/Sao_Paulo`, animações desligadas, tema forçado por `lex-theme` no
+`localStorage` (o mecanismo de `utils/tema.js`). Diferença pixel a pixel com
+Python + PIL, fora do projeto. Junto, a varredura de anomalias pelo DOM:
+elemento que sai do contêiner visual, texto cortado ou encostado na borda do
+botão, interativos sobrepostos, rolagem lateral, imagem distorcida. Detalhes e
+números em `relatorios/FIDELIDADE-R4.md`.
+
+**Exceções aceitas hoje (itens pedidos):** a Home ("Honorários em aberto",
+DEC-069; a linha "processo · cliente" e o prazo por datas, DEC-164 e DEC-165),
+o seletor de situação da Agenda (DEC-052), o × do toast (DEC-083). E as
+correções de defeitos do original no desktop: o "Confirmar leitura" no cartão
+largo, o logo encostado no "Voltar" entre 1201 e 1365 px, o botão do 404 e
+os botões do menu de seleção em massa de Clientes (7 px para fora do menu).
 
 ## DEC-164 (reescrita para o front da Raniele) — "Precisa de atenção" com processo e cliente (fase R3)
 
@@ -246,14 +295,27 @@ Trava: `tests/reativacao.test.js`.
 - Testes novos: `datas.test.js`, `reativacao.test.js`; a trava de contrato
   confere o seletor da Agenda.
 
+### Fase R4 — fidelidade visual (09/11/2026)
+
+- Revertidos ao desenho dela: o `width: 24rem` das telas públicas (a regra de
+  celular foi para `@media`), o `flex-wrap` do portal e o `max-width` do toast
+  (para dentro de `@media`), e o Loading da primeira carga de Clientes e
+  Processos (tela inteira, como o dela; nas buscas seguintes continua na área
+  da lista).
+- Defeitos do original corrigidos no desktop: "Confirmar leitura" no cartão
+  largo, logo encostado no "Voltar" (1201–1365 px), botão do 404, menu de
+  seleção em massa de Clientes.
+- Guarda por `ref` no "Confirmar leitura" (clique duplo gravava duas vezes).
+- Celular, só com `@media`: telas públicas em uma coluna, cabeçalho da Agenda,
+  datas do Financeiro, e-mails longos nos detalhes do cliente.
+- DEC-171 nova; DEC-170 refeita.
+
 ### O que fica para a sessão 2
 
 - O resto do Bloco A da paridade: aba "Financeiro" do cliente (renomeia a aba
   "Pagamentos" quando ganhar as listas, DEC-167), gerações do reparcelamento e
   "Parcela N de M" (DEC-048, DEC-051), pré-visualização da seção, régua de hoje
   na linha do tempo (DEC-056), conferir a DEC-044 no extrato.
-- O login a 360 px, que continua em duas colunas (o formulário fica com cerca
-  de 170 px); é o desenho dela, fora da correção mínima da R2.
 - As guardas restantes (`regeneration.js`, `useSerialQueue`), os testes do grupo
   (a), a acessibilidade, o lint e o restante do `CLAUDE.md` (seção B.4 da
   paridade).

@@ -16,3 +16,9 @@
     position: absolute;
     bottom: 2rem;
 }
+
+/* O botão não tinha largura nem padding: o texto encostava nas bordas
+   arredondadas (defeito do original dela). O padding acompanha o raio de 2rem (R4). */
+.telaNotFound .button {
+    padding: 0 2rem;
+}

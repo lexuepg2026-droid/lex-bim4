@@ -22,9 +22,45 @@
 }
 
 .direitaAutenticacao a {
-    width: min(24rem, 100%);
+    width: 24rem;
 }
 
 .direitaAutenticacao {
     flex-direction: column;
+}
+
+/* Celular (R4): as duas colunas deixavam ~170 px para o formulário e o logo
+   saía do painel. Abaixo de 600 px o painel do logo vai para o topo, com os
+   mesmos tokens e o mesmo arredondamento, e o formulário ocupa a largura. */
+@media (max-width: 600px) {
+    .telaAutenticacao {
+        flex-direction: column;
+    }
+
+    .esquerdaAutenticacao {
+        flex: 0 0 auto;
+        padding: 4.5rem 1rem 2.5rem;
+        border-radius: 0 0 3rem 3rem;
+    }
+
+    .logoAutenticacao {
+        width: 10rem;
+    }
+
+    .direitaAutenticacao {
+        padding: 2.5rem 1rem;
+    }
+
+    /* Sem largura, o main encolhia até o texto, e os botões de 100% iam junto. */
+    .direitaAutenticacao main {
+        width: 100%;
+        max-width: 24rem;
+    }
+}
+
+/* Telas estreitas (DEC-170, refeita na R4): no desktop vale o 24rem dela. */
+@media (max-width: 420px) {
+    .direitaAutenticacao a {
+        width: 100%;
+    }
 }
