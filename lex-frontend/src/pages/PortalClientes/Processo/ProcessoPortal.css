@@ -177,6 +177,13 @@
     color: var(--cinzaEscuro);
 }
 
+/* O botão do portal tem 50vw (Portal.css). No cartão largo, que para em 60rem,
+   ele passava da seção acima de ~1620 px; o defeito já existia no original
+   dela. O limite é a própria seção: abaixo disso nada muda (R4). */
+.secaoPortal .buttonConsultar {
+    max-width: 100%;
+}
+
 /* Telas estreitas (DEC-170): o cartão largo e as seções acompanham o cartão do portal. */
 @media (max-width: 600px) {
     .cardPortal.cardPortalLargo {
