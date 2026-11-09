@@ -1,0 +1,89 @@
+.telaCadastro {
+    width: 100%;
+    height: 100%;
+    display: flex;
+
+    background-color: var(--verdeClaro);
+
+    flex-direction: column;
+
+    align-items: center;
+}
+
+.containerCadastro {
+    width: 35%;
+    margin-bottom: 2rem;
+}
+
+.logoCadastro {
+    width: 5rem;
+
+    margin: 3rem 0 1.5rem;
+}
+
+h1.cadastro {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+}
+
+p.cadastro {
+    color: var(--bege87);
+    margin-bottom: 1.5rem;
+}
+
+h2.cadastro {
+    font-size: 1.2rem;
+    color: var(--bege);
+    font-weight: 500;
+
+    margin: 1.5rem 0 0.75rem;
+}
+
+.cadastrar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+}
+
+.cadastrar option {
+    background-color: var(--verdeClaro);
+    color: var(--bege);
+    font-weight: 600;
+}
+
+.selectsCadastrar {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
+
+    flex-direction: row;
+}
+
+.selectsCadastrar > .divLabelInLine:nth-child(1) {
+    flex: 1;
+}
+
+.selectsCadastrar > .divLabelInLine:nth-child(2) {
+    flex: 2;
+}
+
+input.cadastrar, .buttonCadastrar {
+    width: 100%;
+}
+
+.buttonCadastrar {
+    margin-top: 1rem;
+}
+
+select.cadastrar, input.cadastrar {
+    width: 100%;
+}
+
+@media (max-width: 1024px) {
+    .containerCadastro {
+        width: 100%;
+        max-width: 28rem;
+        padding: 0 1.25rem;
+    }
+}

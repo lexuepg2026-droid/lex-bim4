@@ -1,0 +1,25 @@
+.campoDinheiro {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.campoDinheiroPrefixo {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--bege70);
+    font-size: 0.95rem;
+}
+
+.campoDinheiro input[type="text"] {
+    padding-left: 2.75rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.campoDinheiro--desativado .campoDinheiroPrefixo {
+    opacity: 0.5;
+}

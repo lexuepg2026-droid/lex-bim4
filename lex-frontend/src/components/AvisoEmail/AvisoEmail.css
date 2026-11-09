@@ -1,0 +1,67 @@
+.avisoEmail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+
+    max-width: 1400px;
+    margin: 0 auto 1rem;
+    padding: 0.75rem 1.25rem;
+
+    background-color: var(--cinzaClaro);
+    border-left: 4px solid var(--amareloStatus);
+    border-radius: 16px;
+}
+
+.avisoEmailTexto {
+    color: var(--bege87);
+    font-size: 0.9rem;
+}
+
+.avisoEmailTexto strong {
+    color: var(--bege);
+}
+
+.avisoEmailAcoes {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.avisoEmailBotao {
+    height: 2.25rem;
+    padding: 0 1rem;
+    font-size: 0.8rem;
+}
+
+.avisoEmailFechar {
+    width: 2.25rem;
+    height: 2.25rem;
+
+    background: none;
+    border: none;
+    border-radius: 50%;
+
+    color: var(--bege70);
+    font-size: 1.3rem;
+    cursor: pointer;
+}
+
+.avisoEmailFechar:hover {
+    background-color: var(--bege10);
+    color: var(--bege);
+}
+
+.avisoEmailRetorno {
+    flex-basis: 100%;
+    font-size: 0.85rem;
+}
+
+.avisoEmailRetorno--ok {
+    color: var(--verdeStatus);
+}
+
+.avisoEmailRetorno--erro {
+    color: var(--vermelhoTexto);
+}

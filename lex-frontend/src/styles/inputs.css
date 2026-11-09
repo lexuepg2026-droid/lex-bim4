@@ -1,0 +1,95 @@
+/* ------------------------ Tipo input ------------------------ */
+
+.input {
+    max-height: 3.5rem;
+
+    border: 1px solid var(--bege70);
+    border-radius: 1rem;
+    
+    color: var(--bege);
+    padding: 1.3rem;
+
+    font-weight: 500;
+}
+
+.input::placeholder {
+    color: var(--bege);
+    font-weight: 500;
+}
+
+.input:hover {
+    border-color: var(--bege87);
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--bege87);
+}
+
+/* ------------------------ Label In Line ------------------------ */
+
+.divLabelInLine {
+    position: relative;
+    margin-bottom: 0.8rem;
+}
+
+.divLabelInLine label {
+    position: absolute;
+
+    left: 1rem;
+    top: 45%;
+    padding: 0 0.3rem;
+    
+    color: var(--bege);
+    font-weight: 500;
+    pointer-events: none;
+    
+    transform: translateY(-50%);
+    transition: 0.2s ease;
+}
+
+.divLabelInLine input:focus + label,
+.divLabelInLine input:not(:placeholder-shown) + label {
+    top: 0;
+    transform: translateY(-50%);
+
+    font-size: 0.7rem;
+
+    background-color: var(--verdeClaro);
+}
+
+.divLabelInLine input:-webkit-autofill,
+.divLabelInLine input:-webkit-autofill:hover,
+.divLabelInLine input:-webkit-autofill:focus,
+.divLabelInLine input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--bege) !important;
+
+    -webkit-box-shadow: 0 0 0 1000px var(--verdeClaro) inset !important;
+    background-color: transparent !important;
+
+    caret-color: var(--bege);
+}
+
+/* ------------------------ Input Label Top ------------------------ */
+
+.divLabelTop {
+    display: flex;
+    flex-direction: column;
+}
+
+.divLabelTop label {
+    color: var(--bege);
+    margin: 0.5rem 0;
+}
+
+.divLabelTop input:-webkit-autofill,
+.divLabelTop input:-webkit-autofill:hover,
+.divLabelTop input:-webkit-autofill:focus,
+.divLabelTop input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--bege) !important;
+
+    -webkit-box-shadow: 0 0 0 1000px var(--verdeEscuro) inset !important;
+    background-color: transparent !important;
+
+    caret-color: var(--bege);
+}

@@ -1,0 +1,630 @@
+.telaFinanceiro {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding-top: 1rem;
+    min-height: calc(100vh - 110px);
+}
+
+.telaFinanceiro .baloesTelasAdvogada,
+.financeiroSecao {
+    background-color: var(--cinzaClaro);
+    border-radius: 24px;
+    padding: 1.5rem 1.75rem;
+    min-width: 0;
+}
+
+.financeiroSecao {
+    overflow: hidden;
+}
+
+.financeiroTitulo {
+    color: var(--bege);
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+
+    margin-bottom: 1.25rem;
+}
+
+.financeiroSubtitulo {
+    color: var(--bege);
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.financeiroSecaoCabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+
+    margin-bottom: 1rem;
+}
+
+.financeiroSecaoCabecalho .button {
+    height: 2.75rem;
+    padding: 0 1.25rem;
+    color: var(--verdeEscuro);
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.financeiroSemItens {
+    color: var(--bege70);
+    font-size: 0.9rem;
+    padding: 2rem 0;
+    text-align: center;
+}
+
+.financeiroVerProcessos {
+    color: var(--bege70);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.financeiroVerProcessos:hover {
+    color: var(--bege);
+}
+
+.financeiroCartoes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.financeiroCartao {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+
+    padding: 1rem 1.1rem 1rem 1.35rem;
+    background-color: var(--bege5);
+    border: 1px solid var(--bege10);
+    border-radius: 16px;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.financeiroCartao::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.9rem;
+    bottom: 0.9rem;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background-color: var(--bege30);
+}
+
+.financeiroCartao--positivo::before { background-color: var(--verdeStatus); }
+.financeiroCartao--alerta::before   { background-color: var(--amareloStatus); }
+.financeiroCartao--info::before     { background-color: var(--azulStatus); }
+.financeiroCartao--perigo::before   { background-color: var(--vermelhoStatus); }
+
+.financeiroCartaoLabel {
+    color: var(--bege70);
+    font-size: 0.85rem;
+}
+
+.financeiroCartaoValor {
+    color: var(--bege);
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.financeiroGradeInferior {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 1.25rem;
+}
+
+.financeiroListaVencimentos {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.financeiroItemVencimento {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+
+    padding: 0.8rem 0.75rem;
+    border-bottom: 1px solid var(--bege10);
+}
+
+.financeiroItemVencimento:last-child {
+    border-bottom: none;
+}
+
+.financeiroItemData {
+    color: var(--bege70);
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.financeiroItemCorpo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.financeiroItemTitulo {
+    color: var(--bege87);
+    font-size: 0.92rem;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.financeiroItemProcesso {
+    color: var(--bege70);
+    font-size: 0.8rem;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.financeiroItemValor {
+    color: var(--bege);
+    font-size: 0.92rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.financeiroColunaLateral {
+    display: flex;
+    flex-direction: column;
+}
+
+.financeiroColunaLateral .financeiroSubtitulo {
+    margin-bottom: 1rem;
+}
+
+.financeiroDonutContainer {
+    position: relative;
+    width: 10rem;
+    height: 10rem;
+    margin: 0.5rem auto 1.25rem;
+}
+
+.financeiroDonut {
+    width: 100%;
+    height: 100%;
+}
+
+.financeiroDonutCentro {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.financeiroDonutCentro strong {
+    color: var(--bege);
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.financeiroDonutCentro span {
+    color: var(--bege70);
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.financeiroLegendaDonut {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.financeiroLegendaDonut li {
+    display: grid;
+    grid-template-columns: 0.7rem 1fr auto auto;
+    align-items: center;
+    gap: 0.6rem;
+
+    color: var(--bege70);
+    font-size: 0.88rem;
+}
+
+.financeiroLegendaBolinha {
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+}
+
+.financeiroLegendaBolinha--verde    { background-color: var(--verdeStatus); }
+.financeiroLegendaBolinha--vermelha { background-color: var(--vermelhoStatus); }
+
+.financeiroLegendaPercentual {
+    color: var(--bege70);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.financeiroLegendaValor {
+    color: var(--bege);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    min-width: 7rem;
+}
+
+.financeiroLegendaDonut .financeiroLegendaTotal {
+    grid-template-columns: 1fr auto;
+    padding-top: 0.6rem;
+    margin-top: 0.2rem;
+    border-top: 1px solid var(--bege10);
+}
+
+.financeiroSecao .linhaFiltros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+
+    margin: 0 0 1rem;
+}
+
+.financeiroSecao .linhaFiltros .select {
+    flex: 0 1 14rem;
+    min-width: 11rem;
+    border-color: var(--bege20);
+    border-radius: 2rem;
+}
+
+.financeiroSecao .linhaFiltros select {
+    height: 2.75rem;
+    font-size: 0.9rem;
+}
+
+.financeiroSecao .linhaFiltros select option {
+    background-color: var(--cinzaClaro);
+}
+
+.financeiroBusca {
+    flex: 1 1 18rem;
+    min-width: 0;
+    height: 2.75rem;
+    padding: 0 1.1rem;
+
+    background-color: var(--bege5);
+    border: 1px solid var(--bege20);
+    border-radius: 2rem;
+
+    color: var(--bege87);
+    font-size: 0.9rem;
+}
+
+.financeiroBusca::placeholder {
+    color: var(--bege50);
+}
+
+.financeiroBusca:focus,
+.financeiroSecao .linhaFiltros .select:focus-within {
+    outline: none;
+    border-color: var(--bege70);
+}
+
+.financeiroTabela.listaParcelas {
+    gap: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.financeiroTabela .itemParcela {
+    display: grid;
+    align-items: center;
+    gap: 1rem;
+
+    padding: 0.75rem 0.75rem;
+    border-bottom: 1px solid var(--bege10);
+
+    color: var(--bege87);
+    font-size: 0.88rem;
+}
+
+.financeiroTabela .itemParcela:last-child {
+    border-bottom: none;
+}
+
+.financeiroTabela .itemParcela:not(.financeiroTabelaCabecalho):hover {
+    background-color: var(--bege5);
+}
+
+.financeiroTabela .itemParcela > * {
+    min-width: 0;
+}
+
+.financeiroTabela .financeiroTabelaCabecalho {
+    padding-top: 0.5rem;
+    padding-bottom: 0.6rem;
+    border-bottom-color: var(--bege20);
+
+    color: var(--bege70);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.financeiroTabela--honorarios .itemParcela {
+    grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr) 5.5rem;
+}
+
+.financeiroTabela--parcelas .itemParcela {
+    grid-template-columns: minmax(0, 2.4fr) repeat(3, minmax(0, 1fr)) minmax(0, 0.9fr) minmax(0, 0.9fr) 5.5rem;
+}
+
+.financeiroTabela--pagamentos .itemParcela {
+    grid-template-columns: 6.5rem minmax(0, 2.6fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1fr) 11rem;
+}
+
+.financeiroCelulaPrincipal {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.financeiroCelulaPrincipal a {
+    color: var(--bege);
+    font-weight: 500;
+    text-decoration: none;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.financeiroCelulaPrincipal a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.financeiroCelulaTexto {
+    color: var(--bege87);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.financeiroCelulaSecundaria {
+    color: var(--bege70);
+    font-size: 0.8rem;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.financeiroCelulaNumero {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.financeiroTabela .acoesDetalhe {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+}
+
+.financeiroTabela .botaoIcone {
+    width: 2.25rem;
+    height: 2.25rem;
+}
+
+.financeiroTabela .botaoAcaoParticipante {
+    height: 2.1rem;
+    padding: 0 0.85rem;
+    border-color: var(--bege30);
+}
+
+.itemParcela--inativa {
+    background-color: var(--bege5);
+}
+
+.financeiroPaginacao {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+
+    margin-top: 1rem;
+}
+
+.financeiroPaginacao .buttonOutlined {
+    height: 2.5rem;
+    padding: 0 1.1rem;
+    font-size: 0.85rem;
+    border-color: var(--bege30);
+}
+
+@media (max-width: 1100px) {
+    .financeiroGradeInferior {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 760px) {
+    .financeiroCartoes {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .financeiroCartaoValor {
+        font-size: 1.15rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .financeiroCartoes {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 900px) {
+    .financeiroTabela .financeiroTabelaCabecalho {
+        display: none;
+    }
+
+    .financeiroTabela .itemParcela,
+    .financeiroTabela--honorarios .itemParcela,
+    .financeiroTabela--parcelas .itemParcela,
+    .financeiroTabela--pagamentos .itemParcela {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.6rem 1rem;
+        padding: 1rem 0.25rem;
+    }
+
+    .financeiroCelulaPrincipal,
+    .financeiroTabela .acoesDetalhe {
+        grid-column: 1 / -1;
+    }
+
+    .financeiroTabela .acoesDetalhe {
+        justify-content: flex-start;
+    }
+
+    .financeiroTabela [data-label] {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.15rem;
+        text-align: left;
+    }
+
+    .financeiroTabela [data-label]::before {
+        content: attr(data-label);
+        color: var(--bege70);
+        font-size: 0.72rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .telaFinanceiro .baloesTelasAdvogada,
+    .financeiroSecao {
+        padding: 1.25rem;
+    }
+
+    .financeiroItemVencimento {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.25rem 1rem;
+    }
+
+    .financeiroItemData {
+        grid-column: 1 / -1;
+    }
+
+    .financeiroSecaoCabecalho .button {
+        width: 100%;
+    }
+
+    .financeiroSecao .linhaFiltros .select {
+        flex: 1 1 100%;
+    }
+}
+
+.filtroPeriodo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    color: var(--bege70);
+    font-size: 0.85rem;
+}
+
+.filtroPeriodo input[type="date"] {
+    height: 2.5rem;
+    padding: 0 0.6rem;
+
+    background-color: var(--cinzaClaro80);
+    border: 1px solid var(--bege20);
+    border-radius: 8px;
+
+    color: var(--bege87);
+    color-scheme: var(--esquemaCor);
+}
+
+.estornosLista {
+    grid-column: 1 / -1;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+
+    border-left: 2px solid var(--bege20);
+    padding-left: 0.75rem;
+}
+
+.estornosResumo {
+    color: var(--bege70);
+    font-size: 0.8rem;
+}
+
+.estornoItem {
+    display: grid;
+    grid-template-columns: 6rem 9rem 6.5rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+
+    color: var(--bege87);
+    font-size: 0.8rem;
+}
+
+.estornoItem--anulado {
+    color: var(--bege70);
+    text-decoration: line-through;
+}
+
+.estornoItem--anulado button {
+    text-decoration: none;
+}
+
+.estornoMotivo {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.observacaoPagamento {
+    grid-column: 1 / -1;
+
+    color: var(--bege70);
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+@media (max-width: 900px) {
+    .estornoItem {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .estornoMotivo {
+        grid-column: 1 / -1;
+        white-space: normal;
+    }
+}

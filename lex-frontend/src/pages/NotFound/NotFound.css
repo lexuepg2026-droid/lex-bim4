@@ -1,0 +1,18 @@
+.telaNotFound {
+    background-color: var(--verdeClaro);
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.txtNotFound {
+    color: var(--bege87);
+    margin-bottom: 1rem;
+}
+
+.logoNotFound {
+    position: absolute;
+    bottom: 2rem;
+}

@@ -1,0 +1,63 @@
+# Render — os dois serviços do LEX no monorepo lex-bim4 (DEC-061, reescrita na fase R1).
+#
+# Cada serviço tem o seu rootDir. O front chama /api na MESMA origem e o static
+# site reescreve para o back: é isso que deixa o cookie de sessão (httpOnly,
+# sameSite=strict em produção) funcionar. Não troque o VITE_API_URL pela URL
+# absoluta do back: dois subdomínios de onrender.com são sites diferentes e o
+# cookie deixaria de ir.
+#
+# Variáveis com `sync: false` são preenchidas no painel do Render (nunca aqui).
+services:
+  - type: web
+    name: lex-uepg-api
+    runtime: node
+    rootDir: lex-backend
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_PORTAL_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: EMAIL_PROVIDER
+        sync: false
+      - key: EMAIL_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        sync: false
+
+  - type: web
+    name: lex-uepg-app
+    runtime: static
+    rootDir: lex-frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        value: /api
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://lex-uepg-api.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -1,0 +1,60 @@
+/* ------------------------ Tipo select ------------------------ */
+
+select {
+    height: 3.5rem;
+    width: 100%;
+    
+    color: var(--bege);
+    font-weight: 500;
+    margin: 0;
+    border: none;
+    background: transparent;
+
+    cursor: pointer;
+}
+
+select:focus {
+    outline: none;
+}
+
+/* ------------------------ Classe select ------------------------ */
+
+.select {
+    border: 1px solid var(--bege70);
+    border-radius: 1rem;
+    
+    padding: 0 1rem;
+}
+
+.select:hover {
+    border-color: var(--bege87);
+}
+
+.select:focus {
+    outline: none;
+    border-color: var(--bege87);
+}
+
+/* ------------------------ Select In Line ------------------------ */
+
+.selectLabelInLine label {
+    color: var(--bege);
+    font-weight: 500;
+    pointer-events: none;
+    
+    transform: translateY(-50%);
+    transition: 0.2s ease;
+}
+
+.selectLabelInLine:has(select:focus) label, .selectLabelInLine:has(select:valid) label {
+    top: 0;
+
+    font-size: 0.7rem;
+
+    background-color: var(--verdeClaro);
+}
+
+.selectLabelInLine select:focus {
+    outline: none;
+    box-shadow: none;
+}

@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+.telaAutenticacao {
+    background-color: var(--verdeClaro);
+}
+
+.direitaAutenticacao, .esquerdaAutenticacao {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.esquerdaAutenticacao {
+    background-color: var(--verdeEscuro);
+    border-radius: 0 3rem 3rem 0;
+    box-shadow: 0 0 15px 8px rgba(0, 0, 0, 0.1);
+}
+
+.logoAutenticacao {
+    width: 20rem;
+}
+
+.direitaAutenticacao a {
+    width: 24rem;
+}
+
+.direitaAutenticacao {
+    flex-direction: column;
+}

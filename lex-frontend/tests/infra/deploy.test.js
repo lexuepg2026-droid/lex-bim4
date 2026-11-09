@@ -1,6 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // D-1 — O QUE O DEPLOY PRECISA QUE ESTEJA ESCRITO (frontend)
 //
+// Adaptado na fase R1 (DEC-168) para o front da Raniele dentro do monorepo
+// lex-bim4: o RAIZ é calculado aqui (o helper antigo lia a estrutura do front
+// LEX), e o render.yaml passou para a raiz do monorepo (DEC-061).
+//
 // A fase não muda comportamento: ela faz o repositório rodar fora do
 // `localhost`. O que dá para travar aqui é o que só apareceria depois de
 // publicado — o endereço de desenvolvimento viajando dentro do bundle, a
@@ -11,9 +15,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import process from "node:process";
 
-import { RAIZ } from "../helpers/cssScan.js";
+const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const MONOREPO = resolve(RAIZ, "..");
 
 const ler = (relativo) => readFileSync(resolve(RAIZ, relativo), "utf8");
 
@@ -155,5 +162,53 @@ describe("D-1 — a versão do Node é DECLARADA, e com teto", () => {
     const min = Number(pkg.engines.node.match(/>=\s*(\d+)/)?.[1]);
     const max = Number(pkg.engines.node.match(/<\s*(\d+)/)?.[1]);
     assert.ok(major >= min && major < max, `Node ${process.versions.node} fora de "${pkg.engines.node}"`);
+  });
+});
+
+describe("DEC-061 (monorepo) — o render.yaml da raiz", () => {
+  const caminho = resolve(MONOREPO, "render.yaml");
+  const yaml = existsSync(caminho) ? readFileSync(caminho, "utf8") : "";
+  // Os blocos de cada serviço, sem parser de YAML (nenhuma dependência nova):
+  // o texto entre um "  - type:" de serviço (2 espaços) e o próximo. As regras
+  // de rewrite também são "- type:", mas mais indentadas, e ficam dentro do bloco.
+  const servicos = yaml.split(/\n {2}- type:/).slice(1);
+  const servico = (nome) => servicos.find((b) => new RegExp(`name:\\s*${nome}\\b`).test(b)) ?? "";
+
+  test("existe na raiz do monorepo", () => {
+    assert.ok(existsSync(caminho), "falta render.yaml na raiz do lex-bim4");
+  });
+
+  test("os dois serviços, com os nomes reais e o rootDir de cada um", () => {
+    assert.match(servico("lex-uepg-api"), /rootDir:\s*lex-backend\b/);
+    assert.match(servico("lex-uepg-app"), /rootDir:\s*lex-frontend\b/);
+  });
+
+  test("o back: npm ci, npm start e as variáveis que o código lê", () => {
+    const api = servico("lex-uepg-api");
+    assert.match(api, /buildCommand:\s*npm ci\s*$/m);
+    assert.match(api, /startCommand:\s*npm start/);
+    for (const chave of ["NODE_ENV", "MONGO_URI", "JWT_SECRET", "JWT_PORTAL_SECRET", "CORS_ORIGIN", "APP_URL",
+      "EMAIL_PROVIDER", "EMAIL_API_KEY", "EMAIL_FROM", "EMAIL_FROM_NAME"]) {
+      assert.match(api, new RegExp(`key:\\s*${chave}\\b`), `falta a variável ${chave}`);
+    }
+  });
+
+  test("nenhum segredo com valor no render.yaml: só nomes, com sync: false", () => {
+    for (const chave of ["MONGO_URI", "JWT_SECRET", "JWT_PORTAL_SECRET", "EMAIL_API_KEY"]) {
+      const bloco = yaml.match(new RegExp(`key:\\s*${chave}\\b[^\\n]*\\n([^\\n]*)`))?.[1] ?? "";
+      assert.match(bloco, /sync:\s*false/, `${chave} precisa vir com sync: false, sem valor`);
+    }
+    assert.ok(!/mongodb(\+srv)?:\/\//.test(yaml), "uma URI de banco no render.yaml");
+  });
+
+  test("o front: build, dist, VITE_API_URL=/api, o rewrite de /api e a regra de SPA", () => {
+    const app = servico("lex-uepg-app");
+    assert.match(app, /buildCommand:\s*npm ci && npm run build/);
+    assert.match(app, /staticPublishPath:\s*\.\/dist/);
+    assert.match(app, /key:\s*VITE_API_URL\s*\n\s*value:\s*\/api\s*$/m);
+    assert.match(app, /source:\s*\/api\/\*\s*\n\s*destination:\s*https:\/\/lex-uepg-api\.onrender\.com\/api\/\*/);
+    assert.match(app, /source:\s*\/\*\s*\n\s*destination:\s*\/index\.html/);
+    // A ordem importa: o rewrite de /api vem antes do /* da SPA.
+    assert.ok(app.indexOf("/api/*") < app.indexOf("/index.html"), "o /* da SPA engoliria o /api");
   });
 });

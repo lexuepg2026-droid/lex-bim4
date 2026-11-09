@@ -6,7 +6,7 @@
   "dir": "ltr",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "start_url": "/dashboard",
+  "start_url": "/home",
   "scope": "/",
   "theme_color": "#174034",
   "background_color": "#121212",

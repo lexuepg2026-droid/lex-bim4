@@ -1,0 +1,37 @@
+.statusBadge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+
+    border-radius: 999px;
+    
+    font-size: 0.75rem;
+    font-weight: 600;
+    
+    white-space: nowrap;
+}
+
+.statusBadge--success { 
+    background-color: rgba(76, 175, 80, 0.2);  
+    color: var(--verdeStatus); 
+}
+
+.statusBadge--warning { 
+    background-color: rgba(255, 193, 7, 0.2);  
+    color: var(--amareloStatus); 
+}
+
+.statusBadge--danger  { 
+    background-color: rgba(244, 67, 54, 0.2);  
+    color: var(--vermelhoStatus); 
+}
+
+.statusBadge--info { 
+    background-color: rgba(33, 150, 243, 0.2); 
+    color: var(--azulStatus); 
+}
+
+.statusBadge--neutral { 
+    background-color: var(--bege10);
+    color: var(--bege70); 
+} 

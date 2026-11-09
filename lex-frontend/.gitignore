@@ -23,27 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-
-# Dependências
-/node_modules
-
-# Arquivos de Build
-/dist
-/build
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Vite
-.vite/
-
-# Variáveis de ambiente (os *.example ficam versionados)
+# Variáveis de ambiente
 .env
 .env.*
 !.env.example
-# O `.env.*` acima engoliria também o exemplo do build de produção, que É para
-# ser versionado — é ele que documenta a única variável sem a qual o build
-# falha (Fase F-0). Mesmo padrão do `.env.test.example` no backend.
 !.env.production.example

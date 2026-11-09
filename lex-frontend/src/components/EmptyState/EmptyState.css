@@ -1,0 +1,29 @@
+.emptyState {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    
+    color: var(--bege);
+
+    gap: 0.5rem;
+    padding: 3rem 1rem;
+    text-align: center;
+    grid-column: 1 / -1;
+}
+
+.emptyStateTitulo {
+    font-size: 1.1rem;
+    font-weight: 600;
+    
+    margin: 0;
+}
+
+.emptyStateDescricao {
+    color: var(--bege70);
+    
+    margin: 0;
+}
+
+.emptyStateAcao {
+    margin-top: 1rem;
+}
