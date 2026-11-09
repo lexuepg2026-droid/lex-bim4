@@ -284,7 +284,7 @@ function Clientes() {
                     <div className="select">
                         <select className="selectForm" value={filtroSituacao} onChange={(e) => setFiltroSituacao(e.target.value)}>
                             <option value="">Somente ativos</option>
-                            <option value="desativados">Somente desativados</option>
+                            <option value="inativos">Somente desativados</option>
                             <option value="todos">Ativos e desativados</option>
                         </select>
                     </div>
