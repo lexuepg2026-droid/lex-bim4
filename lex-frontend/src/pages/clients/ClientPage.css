@@ -1,0 +1,460 @@
+/* Container, Título, Tabela, Botões de Ação */
+.cliente-page-container {
+  width: 100%;
+}
+.page-title {
+  color: var(--text-color);
+  font-weight: 500;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 15px;
+  margin-top: 0;
+}
+
+.actions-cell { display: flex; gap: 10px; }
+.btn-action { padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px; cursor: pointer; border: none; }
+.btn-edit { background-color: var(--bg-button); color: var(--text-button); border: 1px solid var(--color-btn-primario-borda); }
+.btn-delete { background-color: var(--color-danger-solid); color: var(--color-on-solid); }
+
+/* --- Formulário --- */
+.data-form { margin-top: 20px; }
+
+/* Seletor de Tipo de Pessoa */
+.tipo-pessoa-seletor { margin-bottom: 20px; }
+.radio-group { display: flex; gap: 20px; margin-top: 10px; }
+.radio-group label { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-color); }
+.radio-group input[type="radio"] { display: none; }
+.radio-group label::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--text-color);
+  background: var(--bg-input);
+}
+.radio-group input[type="radio"]:checked + label::before {
+  background-color: var(--text-color);
+  box-shadow: inset 0 0 0 3px var(--bg-color);
+}
+
+/* Seções do Formulário */
+.form-grid.section {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.form-grid.section h3 {
+  grid-column: span 3;
+  color: var(--text-color);
+  margin-top: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 10px;
+}
+
+.form-group { display: flex; flex-direction: column; }
+.form-group.span-1 { grid-column: span 1; }
+.form-group.span-2 { grid-column: span 2; }
+.form-group.span-3 { grid-column: span 3; }
+/* Filhos do grid que não são .form-group (notas, fieldsets) */
+.form-note.span-3, .form-fieldset.span-3 { grid-column: span 3; }
+.form-group label { color: var(--text-color); margin-bottom: 5px; font-size: 14px; }
+/* O rótulo de um grupo que não é campo (a revogação do portal, Fase 3.5). */
+.form-group__rotulo { color: var(--text-color); margin-bottom: 5px; font-size: 14px; }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-campo);
+  border: 1px solid var(--color-border-input);
+  background: var(--bg-input);
+  color: var(--text-color);
+  font-size: 16px;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.form-group select option { background: var(--bg-color); color: var(--text-color); }
+
+/* Nota explicativa dentro de uma seção do formulário */
+.form-note {
+  color: var(--text-color);
+  opacity: 0.7;
+  font-size: 13px;
+  margin: 0;
+}
+
+/* Agrupamento interno (ex.: representante legal da pessoa jurídica) */
+.form-fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 15px 20px 20px;
+  margin: 0;
+  min-width: 0;
+}
+.form-fieldset legend {
+  color: var(--text-color);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 6px;
+}
+.form-grid-inner {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 12px;
+}
+
+/* Ações do Formulário */
+.form-actions { display: flex; justify-content: flex-end; gap: 15px; margin-top: 30px; border-top: 1px solid var(--color-border); padding-top: 20px; }
+.btn-primary, .btn-cancel { padding: 10px 20px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; }
+.btn-primary { background-color: var(--bg-button); color: var(--text-button); border: 1px solid var(--color-btn-primario-borda); }
+.btn-cancel { background-color: transparent; border: 1px solid var(--text-color); color: var(--text-color); }
+.error-message { color: var(--color-danger-text); }
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.page-header .page-title { margin-bottom: 0; }
+
+.btn-view { background-color: var(--color-info-solid); color: var(--color-on-solid); }
+
+.detail-section {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+  color: var(--text-color);
+}
+.detail-section h3 {
+  margin-top: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 10px;
+}
+.detail-section p { margin: 8px 0; }
+
+/* "Acesso ao portal" (Fase 2.5): o código em corpo maior e espaçado, porque a
+   advogada o dita por telefone — a mesma regra da entrega no processo. */
+.acesso-portal__codigo {
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-lg);
+  letter-spacing: 0.08em;
+  color: var(--color-text-primary);
+}
+
+/* Fase 3.5: o bloco mora na aba "Portal", sobre o balão. */
+.acesso-portal p {
+  margin: var(--space-1) 0;
+}
+
+
+/* Aviso da troca de tipo na edição (F-6.2): o que a gravação vai remover. */
+.tipo-pessoa-aviso {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-color);
+  background: var(--color-accent-muted);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 4px;
+}
+
+/* Painel informativo somente-leitura dentro de formulários */
+.form-info-box {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: var(--color-accent-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  grid-column: span 3;
+}
+
+.form-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+
+.form-info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-color);
+  opacity: 0.6;
+}
+
+.form-info-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.form-info-value--danger { color: var(--color-danger-text); }
+
+/* Resultado de uma conta que o sistema fez — o valor derivado do honorário
+   percentual (Fase 4.2). Verde porque é resultado, não alerta. */
+.form-info-value--success { color: var(--color-success-text); }
+
+/* Texto de apoio abaixo de um campo. A regra já existia em ProfilePage.css,
+   escopada àquele container; os formulários que carregam esta folha (honorário,
+   parcela, pagamento) não a alcançavam. */
+.form-hint {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-color);
+  opacity: 0.65;
+  margin-top: 6px;
+}
+
+/* Valor somente leitura no lugar onde haveria um input — o status derivado do
+   honorário e o já recebido da parcela. NÃO é um input desabilitado: campo
+   cinza no meio do formulário parece algo que se pode habilitar, e estes
+   nunca são editáveis. */
+.form-static-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 0 0;
+}
+
+/* Caixa de seleção com rótulo ao lado, alinhados pela linha de base do texto. */
+.form-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.form-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+@media (max-width: 1023px) {
+  .form-grid.section { grid-template-columns: repeat(2, 1fr); }
+  .form-grid.section h3 { grid-column: span 2; }
+  .form-group.span-3 { grid-column: span 2; }
+  .form-info-box { grid-column: span 2; }
+  .form-note.span-3,
+  .form-fieldset.span-3 { grid-column: span 2; }
+  .form-grid-inner { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   `span-*` VALE PARA QUALQUER FILHO DO GRID — correção da F-1b.2
+   ═══════════════════════════════════════════════════════════════════════════
+
+   ── O defeito, e por que ele passou ──────────────────────────────────────
+   As regras acima eram escritas por PAR de classes: `.form-group.span-3`,
+   `.form-note.span-3`, `.form-fieldset.span-3`. Cada bloco novo que entrasse
+   no grid tinha de ser acrescentado à lista, e o da F-1b — o preview de
+   alocação, `<div className="plano span-3">` — não foi. Resultado:
+
+     • em desktop o bloco do plano ocupava UMA das três colunas, espremido ao
+       lado dos campos, em vez da largura inteira;
+     • `.form-info-box` tem regra própria e recebia `grid-column: span 2` em
+       ≤1023 px, mas NADA a devolvia para `1` em ≤767 px. Num grid de uma
+       coluna, um filho com `span 2` cria uma coluna IMPLÍCITA — e a grade
+       inteira passa a ser mais larga que o container. Era a barra de rolagem
+       horizontal do formulário de pagamento em 360 px (passo 159).
+
+   ── A correção ───────────────────────────────────────────────────────────
+   A largura passa a ser da CLASSE `span-*`, não do par classe+elemento. Quem
+   entrar no grid amanhã com `span-3` recebe a largura certa sem editar esta
+   folha — que é o que a lista por par não conseguia garantir.
+
+   Os pares antigos ficam onde estão: são mais específicos, dizem a mesma
+   coisa, e removê-los agora seria mexer em seis telas para ganhar nada. */
+.span-1 { grid-column: span 1; }
+.span-2 { grid-column: span 2; }
+.span-3 { grid-column: span 3; }
+
+@media (max-width: 1023px) {
+  .span-3 { grid-column: span 2; }
+}
+
+@media (max-width: 767px) {
+  .form-grid.section { grid-template-columns: 1fr; }
+  .form-grid.section h3 { grid-column: 1; }
+  .form-group.span-1,
+  .form-group.span-2,
+  .form-group.span-3 { grid-column: 1; }
+  .form-note.span-3,
+  .form-fieldset.span-3 { grid-column: 1; }
+  .form-grid-inner { grid-template-columns: 1fr; }
+
+  /* Numa grade de UMA coluna, `span 2` e `span 3` inventam colunas implícitas
+     e estouram a largura da página. Tudo volta para a coluna única. */
+  .span-1,
+  .span-2,
+  .span-3 { grid-column: 1; }
+  .form-info-box { grid-column: 1; }
+}
+/* Input apontado pelo backend como causa do conflito (409 com `campo`). */
+.form-group input.input-erro,
+.form-group select.input-erro {
+  border-color: var(--color-danger);
+  /* Era `outline`, e o seletor ganhava do `:focus-visible` global: o campo com
+     erro perdia o anel de foco. A segunda linha da borda virou sombra (Fase 1). */
+  box-shadow: 0 0 0 1px var(--color-danger);
+}
+
+/* A frase do erro dentro do campo (Fase 4a, DEC-157: o percentual do
+   honorário). O texto de perigo sobre o balão do formulário, par medido em
+   `tests/css/contrastePares.js`; acompanha a borda de `.input-erro`. */
+.form-erro-campo {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-danger-text);
+  margin-top: 6px;
+}
+
+.cep-hint {
+  opacity: 0.7;
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* ── Bloco de acesso ao portal (Fase 3.2) ─────────────────────────────────
+   Regras LOCAIS, e não `ui-btn`: `Button.css` é importado por `PageHeader.jsx`
+   e esta tela não monta o `PageHeader`. Aplicar `ui-btn` aqui deixaria o botão
+   sem aparência de botão — o defeito exato que a 2E.2 encontrou em 3 telas. */
+
+.portal-estado {
+  margin-bottom: var(--space-2);
+  color: var(--text-color);
+}
+
+.portal-revogar-confirma {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.btn-portal-revogar,
+.btn-portal-cancelar {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-portal-revogar {
+  background-color: var(--color-danger-solid);
+  color: var(--color-on-solid);
+  border: none;
+}
+
+.btn-portal-cancelar {
+  background-color: transparent;
+  border: 1px solid var(--text-color);
+  color: var(--text-color);
+}
+
+.btn-portal-revogar:disabled,
+.btn-portal-cancelar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Fase 3.5: sem sinal o botão continua focável e diz o motivo ao lado
+   (DEC-053); não é atenuado, para o texto dele continuar medindo o par. */
+.btn-portal-revogar[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.portal-revogar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+/* ── A lista de clientes (Fase 3.5, DEC-121) ──────────────────────────────
+   O avatar e o nome na mesma célula: o avatar não encolhe, o nome corta com
+   reticências (a célula tem `title` com o nome inteiro). */
+.cliente-nome-celula {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cliente-nome-celula__texto {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── O detalhe do cliente (Fase 3.5, DEC-123) ─────────────────────────────
+   O balão, o cabeçalho e os dados são os do detalhe do processo
+   (`ProcessDetailPage.css`). Aqui fica só o que é do cliente: o avatar
+   centrado no bloco de identidade e a grade dos balões da aba "Detalhes" —
+   três colunas no desktop, uma no celular. Sem `transform` nem `filter`: os
+   ⋮ abrem em portal (DEC-046). */
+.cliente-cabecalho__identidade {
+  align-items: center;
+}
+
+.cliente-grade {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.cliente-grade__largo {
+  grid-column: 1 / -1;
+}
+
+/* Dentro de um balão de um terço, um dado por linha. */
+.cliente-dados {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cliente-aba__topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.cliente-aba__topo .processo-balao__titulo {
+  margin: 0;
+}
+
+.cliente-aba__subtitulo {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 1023px) {
+  .cliente-grade {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .cliente-grade {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,0 +1,722 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, Check, FileStack, FileText, LibraryBig, Loader2 } from 'lucide-react';
+import documentService from '../../api/documentService';
+import DocumentCanvas from '../../components/documents/DocumentCanvas';
+import SecaoLibraryPanel from '../../components/documents/SecaoLibraryPanel';
+import BibliotecaEmPainel from '../../components/documents/BibliotecaEmPainel';
+import GenerationPanel from '../../components/documents/GenerationPanel';
+import ActionMenu from '../../components/ui/ActionMenu';
+import Loading from '../../components/common/Loading';
+import Icone from '../../components/ui/Icone.jsx';
+import useLarguraMinima from '../../hooks/useLarguraMinima.js';
+import { useAuth } from '../../contexts/AuthContext';
+import useSerialQueue from '../../hooks/useSerialQueue';
+import useIsMounted from '../../hooks/useIsMounted';
+import {
+  listaDeVinculos,
+  idsDasSecoes,
+  idsNaOrdem,
+  reordenarLocal,
+  removerLocal,
+  secaoIdDe,
+} from './assemblyState.js';
+import { TIPO_DOCUMENTO_OPTIONS, labelDe } from '../../utils/enums';
+import { getApiErrorMessage } from '../../utils/apiError';
+import { toast } from '../../utils/toast';
+import '../../styles/modules.css';
+import '../../components/ui/Button.css';
+import './DocumentAssemblyPage.css';
+import { jaAvisadoPeloToastGlobal } from '../../api/toastGlobal';
+import useOnlineStatus from '../../hooks/useOnlineStatus';
+import {
+  LIMITE_DA_ESCOLHA_DE_MODELO,
+  avisoDeModelosOcultos,
+  destinoDaMontagem,
+  processoIdDaUrl,
+} from './processoDaGeracao.js';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TELA DE MONTAGEM — UMA TELA, DOIS MODOS
+//
+// A mesma tela serve para criar modelo e para gerar documento, com duas portas
+// de entrada distintas na navegação. O modo fica explícito no cabeçalho o tempo
+// todo: a advogada precisa saber sempre se está construindo um modelo
+// reutilizável ou um documento de um cliente.
+//
+//   modo=modelo     sem processo e sem cliente. O que se salva é modelo
+//                   (ehModelo: true), reutilizável em quantos documentos ela
+//                   quiser.
+//   modo=documento  monta e, ao final, gera para um processo e um cliente.
+//
+// ── Por que os dois modos montam sobre um MODELO ──────────────────────────
+//
+// Não é atalho de implementação: é o único caminho que o backend oferece. A
+// geração é `POST /documents/modelos/:id/gerar`, e `carregarModelo` filtra por
+// `ehModelo: true`. Documento gerado é congelado — `textoResolvido` e
+// `variaveisResolvidas` ficam gravados e o PATCH não os aceita.
+//
+// Então montar é sempre montar um modelo. No modo documento, o modelo é
+// escolhido (ou criado) e em seguida gerado. Isso também é o que faz a
+// reutilização funcionar: gerar a mesma procuração para o segundo litisconsorte
+// é escolher o mesmo modelo outra vez, não montar tudo de novo.
+//
+// ── Salvamento ────────────────────────────────────────────────────────────
+//
+// Sem botão "Salvar": cada operação persiste na hora. Reordenar e remover são
+// otimistas, com rollback visível se a requisição falhar. Inserir espera a
+// resposta, porque a inserção reordena as demais no servidor (empurrão de
+// posição) e a tela não tem como adivinhar a sequência resultante.
+//
+// Todas as chamadas passam pela fila serial — ver `useSerialQueue`.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MODO_MODELO = 'modelo';
+const MODO_DOCUMENTO = 'documento';
+
+const ehModoValido = (modo) => modo === MODO_MODELO || modo === MODO_DOCUMENTO;
+
+// A borda da barra de baixo (DEC-079) e do CSS desta tela.
+const LARGURA_DA_BIBLIOTECA_AO_LADO = 1024;
+
+function DocumentAssemblyPage() {
+  const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const enfileirar = useSerialQueue();
+
+  const modo = ehModoValido(searchParams.get('modo')) ? searchParams.get('modo') : MODO_MODELO;
+  // Fase 3.9a (DEC-140): o processo pedido pela lista filtrada por processo.
+  const processoIdDaLista = processoIdDaUrl(searchParams);
+
+  const [documento, setDocumento] = useState(null);
+  const [vinculos, setVinculos] = useState([]);
+  const [loading, setLoading] = useState(Boolean(id));
+  const [error, setError] = useState('');
+
+  const [secaoArmada, setSecaoArmada] = useState(null);
+
+  // Fase 3.9b (DEC-145): a partir de 1024 px a biblioteca é uma coluna ao lado
+  // da folha; abaixo, um painel que abre pelo botão "Biblioteca de seções".
+  const bibliotecaAoLado = useLarguraMinima(LARGURA_DA_BIBLIOTECA_AO_LADO);
+  const [bibliotecaAberta, setBibliotecaAberta] = useState(false);
+  const botaoDaBiblioteca = useRef(null);
+  const fecharBiblioteca = useCallback(() => {
+    setBibliotecaAberta(false);
+    botaoDaBiblioteca.current?.focus();
+  }, []);
+
+  // Indicador discreto de salvamento. `emVoo` é contador, não booleano: com
+  // operações serializadas ainda pode haver mais de uma enfileirada, e um
+  // booleano apagaria o "salvando" na primeira que terminasse.
+  const [emVoo, setEmVoo] = useState(0);
+  const [salvoEm, setSalvoEm] = useState(null);
+  const [erroSalvamento, setErroSalvamento] = useState('');
+
+  // Evita setState depois do unmount — a tela navega para o editor de texto
+  // final assim que a geração dá certo, e as promises em voo continuam vivas.
+  //
+  // Era duas linhas escritas à mão AQUI, e o corpo do efeito estava vazio: só a
+  // limpeza escrevia no ref. O desmonte simulado do `<React.StrictMode>` deixava
+  // a sentinela presa em `false` com a tela viva, e TODO `setState` guardado
+  // virava no-op silencioso — foi esse o bug da folha que não atualizava. O
+  // porquê inteiro está em `hooks/useIsMounted.js`.
+  const montado = useIsMounted();
+
+  const idsUsados = useMemo(() => idsDasSecoes(vinculos), [vinculos]);
+
+  // ── Carga ────────────────────────────────────────────────────────────────
+
+  const recarregarVinculos = useCallback(async () => {
+    const res = await documentService.listDocumentSecoes(id);
+    const lista = listaDeVinculos(res);
+    if (montado.current) setVinculos(lista);
+    return lista;
+  }, [id, montado]);
+
+  useEffect(() => {
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+
+    let ativo = true;
+    setLoading(true);
+    setError('');
+
+    Promise.all([documentService.getDocumentById(id), documentService.listDocumentSecoes(id)])
+      .then(([resDoc, resVinculos]) => {
+        if (!ativo) return;
+        setDocumento(resDoc.data);
+        setVinculos(listaDeVinculos(resVinculos));
+      })
+      .catch((err) => {
+        if (!ativo) return;
+        setError(getApiErrorMessage(err, 'Falha ao carregar a montagem.'));
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
+      });
+
+    return () => { ativo = false; };
+  }, [id]);
+
+  // ── Execução das operações ───────────────────────────────────────────────
+
+  // Envolve uma operação com: fila serial, indicador de salvamento e rollback.
+  //
+  // `snapshot` é o estado exatamente anterior à mudança otimista. Em caso de
+  // falha ele volta à tela — é o rollback visível — e só então tentamos
+  // reconciliar com o servidor. A reconciliação é rede de segurança e não pode
+  // apagar o rollback: se ela também falhar (queda de rede), o snapshot fica.
+  const executar = useCallback(
+    ({ acao, snapshot, mensagemDeErro }) =>
+      enfileirar(async () => {
+        if (montado.current) {
+          setEmVoo((n) => n + 1);
+          setErroSalvamento('');
+        }
+
+        try {
+          await acao();
+          if (montado.current) setSalvoEm(new Date());
+        } catch (err) {
+          const mensagem = getApiErrorMessage(err, mensagemDeErro);
+
+          if (montado.current) {
+            if (snapshot) setVinculos(snapshot);
+            setErroSalvamento(mensagem);
+          }
+          if (!jaAvisadoPeloToastGlobal(err)) toast.error(mensagem);
+
+          // Reconcilia com o servidor. Silenciosa de propósito: o erro que
+          // importa já foi mostrado, e falha aqui só significa que o snapshot
+          // continua sendo a melhor verdade disponível.
+          try {
+            await recarregarVinculos();
+          } catch {
+            /* mantém o rollback */
+          }
+
+          throw err;
+        } finally {
+          if (montado.current) setEmVoo((n) => Math.max(0, n - 1));
+        }
+      }),
+    [enfileirar, recarregarVinculos, montado]
+  );
+
+  // ── Inserção — os dois caminhos ──────────────────────────────────────────
+  //
+  // Botão "Adicionar" chama sem `ordem` (anexa ao fim). Arrastar e "Inserir
+  // aqui" chamam com `ordem` (insere e empurra). É o MESMO método de serviço:
+  // o empurrão é regra do backend e não se reimplementa aqui.
+
+  const inserir = useCallback(
+    (secaoId, ordem) => {
+      if (!id) return Promise.resolve();
+
+      if (idsUsados.has(String(secaoId))) {
+        // Antecipação do índice único {documentoId, secaoId}. O backend
+        // recusaria com 409 de qualquer forma; avisar aqui poupa a viagem.
+        toast.error('Esta seção já está no documento. Cada seção entra uma vez só.');
+        return Promise.resolve();
+      }
+
+      setSecaoArmada(null);
+
+      return executar({
+        // Sem otimismo aqui: a inserção com `ordem` empurra as seguintes no
+        // servidor, e a sequência resultante é dele. Reproduzir o empurrão na
+        // tela seria duplicar a regra — a releitura é mais curta e não mente.
+        acao: async () => {
+          await documentService.vincularSecao(id, { secaoId, ordem });
+          await recarregarVinculos();
+        },
+        mensagemDeErro: 'Não foi possível inserir a seção.',
+      }).catch(() => {});
+    },
+    [id, idsUsados, executar, recarregarVinculos]
+  );
+
+  const adicionarAoFim = useCallback((secao) => inserir(secao._id, undefined), [inserir]);
+
+  const inserirNaPosicao = useCallback((secaoId, posicao) => inserir(secaoId, posicao), [inserir]);
+
+  // ── Reordenar — otimista, com rollback ───────────────────────────────────
+
+  const aplicarOrdem = useCallback(
+    (de, para) => {
+      if (!id) return;
+      if (de === para || de < 0 || para < 0 || de >= vinculos.length || para >= vinculos.length) {
+        return;
+      }
+
+      const snapshot = vinculos;
+      const reordenado = reordenarLocal(vinculos, de, para);
+
+      setVinculos(reordenado);
+      setSecaoArmada(null);
+
+      const ids = idsNaOrdem(reordenado);
+
+      executar({
+        // `secoes` precisa conter exatamente as seções vinculadas — reordenar é
+        // permutar. Montamos a partir do array já reordenado na tela, e é por
+        // isso que a fila serial importa: sem ela, duas reordenações rápidas
+        // mandariam arrays construídos sobre estados que o servidor ainda não
+        // confirmou.
+        acao: () => documentService.reordenarSecoes(id, ids),
+        snapshot,
+        mensagemDeErro: 'Não foi possível salvar a nova ordem.',
+      }).catch(() => {});
+    },
+    [id, vinculos, executar]
+  );
+
+  // ── Remover — otimista, com rollback ─────────────────────────────────────
+
+  const remover = useCallback(
+    (vinculo) => {
+      if (!id) return;
+
+      const secaoId = secaoIdDe(vinculo);
+      const snapshot = vinculos;
+
+      setVinculos(removerLocal(vinculos, secaoId));
+      setSecaoArmada(null);
+
+      executar({
+        acao: () => documentService.desvincularSecao(id, secaoId),
+        snapshot,
+        mensagemDeErro: 'Não foi possível remover a seção.',
+      }).catch(() => {});
+    },
+    [id, vinculos, executar]
+  );
+
+  // ── Porta de entrada: escolher ou criar o modelo ─────────────────────────
+
+  if (!id) {
+    return <AssemblyStartCard modo={modo} navigate={navigate} processoId={processoIdDaLista} />;
+  }
+
+  if (loading) return <Loading />;
+
+  if (error) {
+    return (
+      <div className="module-container">
+        <p className="error-message">{error}</p>
+        <Link to="/dashboard/documentos" className="ui-btn ui-btn--secondary ui-btn--md">
+          Voltar para Documentos
+        </Link>
+      </div>
+    );
+  }
+
+  const salvando = emVoo > 0;
+
+  // Pelo painel do celular, inserir FECHA o painel (DEC-145): armar para
+  // escolher a posição e "Adicionar" ao fim levam a advogada de volta à folha,
+  // onde está o resultado. Na coluna ao lado nada muda.
+  const armarPelaBiblioteca = (secao) => {
+    if (!bibliotecaAoLado && secao) fecharBiblioteca();
+    setSecaoArmada(secao);
+  };
+  const adicionarPelaBiblioteca = (secao) => {
+    if (!bibliotecaAoLado) fecharBiblioteca();
+    return adicionarAoFim(secao);
+  };
+
+  const biblioteca = (
+    <SecaoLibraryPanel
+      idsUsados={idsUsados}
+      secaoArmada={secaoArmada}
+      onArmar={armarPelaBiblioteca}
+      onAdicionarAoFim={adicionarPelaBiblioteca}
+      desabilitado={salvando}
+    />
+  );
+
+  // O ⋮ do cabeçalho leva as ações que a tela já oferecia em texto: gerar a
+  // partir do modelo (o rodapé do modo modelo) e cadastrar seções (o estado
+  // vazio da biblioteca).
+  const acoesDoCabecalho = [
+    ...(modo === MODO_MODELO
+      ? [{ rotulo: 'Gerar documento', to: '/dashboard/documentos/montar?modo=documento' }]
+      : []),
+    { rotulo: 'Abrir a Biblioteca de Seções', to: '/dashboard/secoes' },
+  ];
+
+  return (
+    <div className="module-container montagem">
+      {/* Fase 3.9b (DEC-145): o cabeçalho em balão. O modo fica nele o tempo
+          todo, não só na entrada; o indicador de salvamento, à direita. */}
+      <header className={`montagem__cabecalho montagem__cabecalho--${modo}`}>
+        <div className="montagem__identidade">
+          <span className="montagem__selo">
+            {modo === MODO_MODELO ? <FileStack size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
+            {modo === MODO_MODELO ? 'Novo modelo' : 'Novo documento'}
+          </span>
+          <h1 className="montagem__titulo">{documento?.nome}</h1>
+          <p className="montagem__subtitulo">
+            {labelDe(TIPO_DOCUMENTO_OPTIONS, documento?.tipo)}
+            {modo === MODO_MODELO
+              ? ' · reutilizável, sem processo e sem cliente'
+              : ' · escolha o processo e o cliente no painel abaixo'}
+          </p>
+        </div>
+
+        <div className="montagem__direita">
+          <div className="montagem__estado" aria-live="polite">
+            {salvando ? (
+              <span className="montagem__estado-item montagem__estado-item--salvando">
+                <Loader2 size={14} className="montagem__girando" aria-hidden="true" />
+                salvando…
+              </span>
+            ) : erroSalvamento ? (
+              <span className="montagem__estado-item montagem__estado-item--erro">
+                <AlertTriangle size={14} aria-hidden="true" />
+                não salvo — a ordem anterior foi restaurada
+              </span>
+            ) : salvoEm ? (
+              <span className="montagem__estado-item montagem__estado-item--salvo">
+                <Check size={14} aria-hidden="true" />
+                salvo às {salvoEm.toLocaleTimeString('pt-BR')}
+              </span>
+            ) : (
+              <span className="montagem__estado-item montagem__estado-item--ocioso">
+                cada mudança salva sozinha
+              </span>
+            )}
+          </div>
+          <ActionMenu rotulo={`Ações da montagem de ${documento?.nome ?? 'documento'}`} itens={acoesDoCabecalho} />
+        </div>
+      </header>
+
+      {erroSalvamento && <p className="error-message">{erroSalvamento}</p>}
+
+      {secaoArmada && (
+        <p className="montagem__armada">
+          <strong>“{secaoArmada.titulo}”</strong> pronta para entrar. Escolha o ponto na folha com
+          “Inserir aqui”, ou{' '}
+          <button type="button" className="montagem__cancelar-armada" onClick={() => setSecaoArmada(null)}>
+            cancelar
+          </button>
+          .
+        </p>
+      )}
+
+      <div className="montagem__area">
+        <section className="montagem__balao" aria-labelledby="montagem-folha-titulo">
+          <div className="montagem__balao-topo">
+            <h2 id="montagem-folha-titulo" className="montagem__balao-titulo">
+              Folha <span className="montagem__balao-total">({vinculos.length})</span>
+            </h2>
+            {!bibliotecaAoLado && (
+              <button
+                ref={botaoDaBiblioteca}
+                type="button"
+                className="ui-btn ui-btn--secondary ui-btn--md montagem__abrir-biblioteca"
+                aria-expanded={bibliotecaAberta}
+                aria-controls="montagem-painel-biblioteca"
+                onClick={() => setBibliotecaAberta(true)}
+              >
+                <LibraryBig size={16} aria-hidden="true" />
+                Biblioteca de seções
+              </button>
+            )}
+          </div>
+
+          <DocumentCanvas
+            usuario={user}
+            vinculos={vinculos}
+            secaoArmada={secaoArmada}
+            onInserirNaPosicao={inserirNaPosicao}
+            onMover={aplicarOrdem}
+            onRemover={remover}
+            onReordenarPorArraste={aplicarOrdem}
+            desabilitado={salvando}
+            bibliotecaAoLado={bibliotecaAoLado}
+          />
+        </section>
+
+        {bibliotecaAoLado ? (
+          <div className="montagem__balao montagem__lateral">{biblioteca}</div>
+        ) : (
+          <BibliotecaEmPainel
+            id="montagem-painel-biblioteca"
+            aberto={bibliotecaAberta}
+            onFechar={fecharBiblioteca}
+          >
+            {biblioteca}
+          </BibliotecaEmPainel>
+        )}
+      </div>
+
+      {modo === MODO_DOCUMENTO && (
+        <GenerationPanel
+          modeloId={id}
+          totalSecoes={vinculos.length}
+          processoIdInicial={processoIdDaLista}
+          onGerado={(documentoGerado) => {
+            toast.success('Documento gerado. Agora é revisar o texto final.');
+            navigate(`/dashboard/documentos/${documentoGerado._id}/texto`);
+          }}
+        />
+      )}
+
+      {modo === MODO_MODELO && (
+        <footer className="montagem__rodape">
+          <p>
+            Modelo pronto. Para emitir um documento a partir dele, use{' '}
+            <Link to="/dashboard/documentos/montar?modo=documento">Gerar documento</Link> no menu e
+            escolha este modelo.
+          </p>
+        </footer>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PORTA DE ENTRADA
+//
+// modo=modelo     nomeia e cria um modelo novo
+// modo=documento  escolhe um modelo já montado (o caminho normal — a
+//                 reutilização é o ponto do modelo) ou monta um novo
+// ═══════════════════════════════════════════════════════════════════════════
+function AssemblyStartCard({ modo, navigate, processoId = '' }) {
+  const online = useOnlineStatus();
+  const [modelos, setModelos] = useState([]);
+  const [totalDeModelos, setTotalDeModelos] = useState(null);
+  // Fase 3.9a (DEC-141): a escolha do modelo busca no servidor, pelo nome.
+  const [buscaModelo, setBuscaModelo] = useState('');
+  const [buscaModeloDebounced, setBuscaModeloDebounced] = useState('');
+  const [carregandoModelos, setCarregandoModelos] = useState(modo === MODO_DOCUMENTO);
+  const [nome, setNome] = useState('');
+  const [tipo, setTipo] = useState('');
+  const [criando, setCriando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [criarNovo, setCriarNovo] = useState(modo === MODO_MODELO);
+
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaModeloDebounced(buscaModelo.trim()), 300);
+    return () => clearTimeout(t);
+  }, [buscaModelo]);
+
+  useEffect(() => {
+    if (modo !== MODO_DOCUMENTO) return;
+    // Sem sinal não pergunta: a busca precisa de conexão (a frase está no JSX).
+    if (!online) {
+      setCarregandoModelos(false);
+      return;
+    }
+
+    let ativo = true;
+    setCarregandoModelos(true);
+    documentService
+      .buscarModelos({ busca: buscaModeloDebounced || undefined, limit: LIMITE_DA_ESCOLHA_DE_MODELO })
+      .then((res) => {
+        if (!ativo) return;
+        const lista = res.data.data ?? res.data;
+        setModelos(Array.isArray(lista) ? lista : []);
+        setTotalDeModelos(typeof res.data.total === 'number' ? res.data.total : null);
+        setErro('');
+      })
+      .catch((err) => {
+        // `semToastGlobal` (DEC-084): a falha aparece aqui, em linha.
+        if (ativo) setErro(getApiErrorMessage(err, 'Falha ao carregar os modelos.'));
+      })
+      .finally(() => {
+        if (ativo) setCarregandoModelos(false);
+      });
+
+    return () => { ativo = false; };
+  }, [modo, buscaModeloDebounced, online]);
+
+  const criar = async (evento) => {
+    evento.preventDefault();
+
+    if (!nome.trim() || !tipo) {
+      setErro('Informe o nome e o tipo do documento.');
+      return;
+    }
+
+    setCriando(true);
+    setErro('');
+
+    try {
+      const res = await documentService.criarModelo({ nome: nome.trim(), tipo });
+      navigate(destinoDaMontagem(res.data._id, modo, processoId), { replace: true });
+    } catch (err) {
+      setErro(getApiErrorMessage(err, 'Não foi possível criar o modelo.'));
+      setCriando(false);
+    }
+  };
+
+  return (
+    <div className="module-container montagem">
+      {/* Fase 3.9b (DEC-147): o cartão de início na pele das listas — o
+          cabeçalho em balão, a busca em pílula e os modelos em linhas. */}
+      <header className={`montagem__cabecalho montagem__cabecalho--${modo}`}>
+        <div className="montagem__identidade">
+          <span className="montagem__selo">
+            {modo === MODO_MODELO ? <FileStack size={14} aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
+            {modo === MODO_MODELO ? 'Novo modelo' : 'Novo documento'}
+          </span>
+          <h1 className="montagem__titulo">
+            {modo === MODO_MODELO ? 'Montar um modelo' : 'Gerar um documento'}
+          </h1>
+          <p className="montagem__subtitulo">
+            {modo === MODO_MODELO
+              ? 'Modelo é a peça reutilizável: monte uma vez e emita para quantos clientes precisar. Sem processo e sem cliente.'
+              : 'Escolha o modelo que serve de base. O processo e o cliente vêm depois, na mesma tela.'}
+          </p>
+        </div>
+      </header>
+
+      {erro && <p className="error-message">{erro}</p>}
+
+      {modo === MODO_DOCUMENTO && !criarNovo && (
+        <section className="montagem__balao" aria-labelledby="inicio-escolha-titulo">
+          <div className="montagem__balao-topo">
+            <h2 id="inicio-escolha-titulo" className="montagem__balao-titulo">
+              Escolha o modelo
+              {typeof totalDeModelos === 'number' && online && (
+                <span className="montagem__balao-total"> ({totalDeModelos})</span>
+              )}
+            </h2>
+          </div>
+
+          {/* Fase 3.9a (DEC-141): a busca pelo nome. O campo NUNCA desmonta
+              durante a carga — o indicador fica abaixo dele (o foco não se
+              perde, a regra da F-1a.1). */}
+          <div className="inicio-busca">
+            <label htmlFor="montagem-busca-modelo">Buscar modelo</label>
+            <span className="inicio-busca__pilula">
+              <Icone nome="lupa" tamanho={16} className="inicio-busca__lupa" />
+              <input
+                id="montagem-busca-modelo"
+                type="search"
+                value={buscaModelo}
+                onChange={(e) => setBuscaModelo(e.target.value)}
+                placeholder="Nome do modelo"
+                maxLength={80}
+                aria-describedby="montagem-busca-modelo-aviso"
+              />
+            </span>
+            <p id="montagem-busca-modelo-aviso" className="inicio-bloco__vazio" aria-live="polite">
+              {!online
+                ? 'A busca precisa de conexão. Conecte-se para escolher o modelo.'
+                : avisoDeModelosOcultos(modelos.length, totalDeModelos) ?? ''}
+            </p>
+          </div>
+
+          {!online ? null : carregandoModelos ? (
+            <Loading />
+          ) : modelos.length === 0 && buscaModeloDebounced ? (
+            <p className="inicio-bloco__vazio">Nenhum modelo com “{buscaModeloDebounced}”.</p>
+          ) : modelos.length === 0 ? (
+            <p className="inicio-bloco__vazio">
+              Não há modelo montado ainda. Comece por um:{' '}
+              <button type="button" className="inicio-bloco__link" onClick={() => setCriarNovo(true)}>
+                montar um modelo novo
+              </button>
+              .
+            </p>
+          ) : (
+            <>
+              <ul className="inicio-modelos">
+                {modelos.map((modelo) => (
+                  <li key={modelo._id}>
+                    <button
+                      type="button"
+                      className="inicio-modelo"
+                      onClick={() =>
+                        navigate(destinoDaMontagem(modelo._id, MODO_DOCUMENTO, processoId))
+                      }
+                    >
+                      <Icone nome="documento" tamanho={20} className="inicio-modelo__icone" />
+                      <span className="inicio-modelo__textos">
+                        <span className="inicio-modelo__nome">{modelo.nome}</span>
+                        <span className="inicio-modelo__tipo">
+                          {labelDe(TIPO_DOCUMENTO_OPTIONS, modelo.tipo)}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="inicio-bloco__alternativa">
+                Nenhum serve?{' '}
+                <button type="button" className="inicio-bloco__link" onClick={() => setCriarNovo(true)}>
+                  montar um modelo novo
+                </button>
+                .
+              </p>
+            </>
+          )}
+        </section>
+      )}
+
+      {(modo === MODO_MODELO || criarNovo) && (
+        <section className="montagem__balao" aria-labelledby="inicio-criar-titulo">
+          <h2 id="inicio-criar-titulo" className="montagem__balao-titulo inicio-bloco__titulo">
+            {modo === MODO_MODELO ? 'Nome e tipo' : 'Montar um modelo novo'}
+          </h2>
+
+          <form onSubmit={criar} className="inicio-form">
+            <div className="inicio-form__campo">
+              <label htmlFor="montagem-nome">Nome *</label>
+              <input
+                id="montagem-nome"
+                type="text"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Ex.: Procuração Ad Judicia"
+                maxLength={120}
+                required
+              />
+            </div>
+
+            <div className="inicio-form__campo">
+              <label htmlFor="montagem-tipo">Tipo *</label>
+              <select
+                id="montagem-tipo"
+                value={tipo}
+                onChange={(e) => setTipo(e.target.value)}
+                required
+              >
+                <option value="">Selecione</option>
+                {TIPO_DOCUMENTO_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="inicio-form__acoes">
+              {modo === MODO_DOCUMENTO && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--secondary ui-btn--md"
+                  onClick={() => setCriarNovo(false)}
+                >
+                  Voltar aos modelos
+                </button>
+              )}
+              <button type="submit" className="ui-btn ui-btn--primary ui-btn--md" disabled={criando}>
+                {criando ? 'Criando…' : 'Começar a montar'}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+    </div>
+  );
+}
+
+export default DocumentAssemblyPage;

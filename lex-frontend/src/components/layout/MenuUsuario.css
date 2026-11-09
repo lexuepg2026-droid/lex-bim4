@@ -1,0 +1,71 @@
+/* O menu do usuário na barra da marca (Fase 2a): "Olá, {nome}" e o círculo de
+   iniciais da Figura 17. O botão é um `<button>` — o dela era uma `div`
+   clicável, sem teclado. */
+.menu-usuario .menu-suspenso__botao {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-marca-texto);
+  cursor: pointer;
+}
+
+.menu-usuario .menu-suspenso__botao:hover,
+.menu-usuario .menu-suspenso__botao[aria-expanded='true'] {
+  background-color: var(--color-marca-realce);
+}
+
+.menu-usuario .menu-suspenso__botao:focus-visible {
+  border-radius: var(--radius-full);
+}
+
+.menu-usuario__saudacao {
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.menu-usuario__avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-marca-texto);
+  border-radius: var(--radius-full);
+  background-color: var(--color-marca-fundo);
+  color: var(--color-marca-texto);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  user-select: none;
+}
+
+/* O ponto de alerta: e-mail não confirmado (Fase 2b, DEC-088). O anel da
+   cor da barra separa o ponto do contorno bege do círculo. A palavra está no
+   `aria-label` do botão — o ponto é a pista visual, não a única. */
+.menu-usuario__alerta {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--color-marca-fundo);
+  border-radius: var(--radius-full);
+  background-color: var(--color-marca-alerta);
+}
+
+.menu-suspenso__item--alerta {
+  color: var(--color-warning-text);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Na barra compacta (< 1024 px) a saudação sai e fica o círculo, que continua
+   com nome acessível (`aria-label` do botão). Em 1024 px, com os seis links,
+   sobram ~210 px entre "Documentos" e o sino: a saudação cabe (DEC-079). */
+@media (max-width: 1023px) {
+  .menu-usuario__saudacao { display: none; }
+  .menu-usuario .menu-suspenso__botao { padding: var(--space-1); }
+}
