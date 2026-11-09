@@ -1,0 +1,13 @@
+# Segredos: nunca no repositório (ele é público)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Dependências e builds
+node_modules/
+dist/
+
+# Capturas de tela e artefatos de verificação
+capturas/
+*.log
