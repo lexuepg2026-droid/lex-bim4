@@ -950,3 +950,13 @@ input[type="checkbox"]:checked::before, .checkboxMestre input[type="checkbox"]:c
         gap: 0.75rem;
     }
 }
+
+/* Celular (R4): e-mail e observação longos, sem espaço para quebrar, passavam
+   do campo de leitura nos detalhes do cliente. */
+@media (max-width: 640px) {
+    .tituloInput .valorLeitura,
+    .observacaoBox {
+        overflow-wrap: anywhere;
+        min-width: 0;
+    }
+}
