@@ -22,7 +22,7 @@
 }
 
 .direitaAutenticacao a {
-    width: 24rem;
+    width: min(24rem, 100%);
 }
 
 .direitaAutenticacao {
