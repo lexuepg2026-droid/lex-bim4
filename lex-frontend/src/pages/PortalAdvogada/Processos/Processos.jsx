@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 
 import lupa from "../../../assets/images/icons/lupa.svg";
@@ -103,7 +103,12 @@ function Processos() {
         return () => clearTimeout(t);
     }, [busca, setBuscaAtrasada]);
 
+    const ultimaBusca = useRef(0);
+
+    // Só a resposta da busca mais recente vale (fase R2). Com a lista em tela
+    // durante a carga, os filtros continuam montados e a corrida ficaria possível.
     const buscarProcessos = async () => {
+        const numero = ++ultimaBusca.current;
         setCarregando(true);
         setErro("");
 
@@ -118,12 +123,13 @@ function Processos() {
                 portal: filtroPortal || undefined,
             });
 
+            if (numero !== ultimaBusca.current) return;
             setProcessos(lista);
             setTotal(lista.length);
         } catch (err) {
-            setErro(getApiErrorMessage(err, "Falha ao buscar processos."));
+            if (numero === ultimaBusca.current) setErro(getApiErrorMessage(err, "Falha ao buscar processos."));
         } finally {
-            setCarregando(false);
+            if (numero === ultimaBusca.current) setCarregando(false);
         }
     };
 
@@ -134,7 +140,7 @@ function Processos() {
     useEffect(() => {
         processService.listarTiposDeAcao()
             .then((res) => setTiposDeAcao(res.data.data ?? []))
-            .catch(() => {});
+            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar os tipos de ação.")));
     }, []);
 
     const confirmarExclusao = async (id) => {
@@ -233,7 +239,8 @@ function Processos() {
 
     const abrirDetalhe = (id) => navigate(`/processos/detalhes/${id}`);
 
-    if (carregando) return <Loading />;
+    // O Loading fica na área da lista, e não no lugar da tela: a tela inteira
+    // desmontava a cada busca e o campo de busca perdia o foco (fase R2).
 
     return (
         <div className="tela telaProcessos">
@@ -350,8 +357,10 @@ function Processos() {
 
                 {erro && <p className="mensagemErro">{erro}</p>}
 
-                {processos.length === 0 ? (
-                    <EmptyState titulo="Nenhum processo encontrado." descricao="Tente ajustar os filtros ou cadastre um novo processo." />
+                {carregando ? (
+                    <Loading />
+                ) : processos.length === 0 ? (
+                    !erro && <EmptyState titulo="Nenhum processo encontrado." descricao="Tente ajustar os filtros ou cadastre um novo processo." />
                 ) : (
                     chavesOrdenadas.map((chave) => {
                         const processosDoGrupo = grupos[chave];

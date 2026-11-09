@@ -198,7 +198,7 @@ function Calendario() {
     useEffect(() => {
         buscarTudo(processService.listProcesses)
             .then(setProcessos)
-            .catch(() => {});
+            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar os processos.")));
     }, []);
 
     const navegar = (direcao) => {

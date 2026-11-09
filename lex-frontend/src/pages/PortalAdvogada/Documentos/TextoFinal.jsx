@@ -11,6 +11,7 @@ import documentService from "../../../services/documentService";
 import { getApiErrorDetails, getApiErrorMessage, getApiErrorPendencias } from "../../../utils/apiError";
 import { formatDate } from "../../../utils/formatters";
 import { toast } from "../../../utils/toast";
+import useIsMounted from "../../../hooks/useIsMounted";
 import { labelDe, TIPO_DOCUMENTO_OPTIONS, TIPO_SECAO_OPTIONS } from "../../../utils/enums";
 
 import { ListaPendencias, textoDaSobrescrita } from "./GerarDocumento";
@@ -32,6 +33,9 @@ const motivoParaNaoRegerar = (documento) => {
 
 function TextoFinal({ documento }) {
     const navigate = useNavigate();
+    // A resposta tardia não age numa tela que a advogada já deixou: regerar e
+    // sair levava de volta ao documento 3 s depois (fase R2, guarda da 3.9).
+    const montado = useIsMounted();
     const id = documento._id;
     const areaRef = useRef(null);
 
@@ -88,11 +92,13 @@ function TextoFinal({ documento }) {
         setSalvando(true);
         try {
             const res = await documentService.atualizarTexto(id, texto);
+            if (!montado.current) return;
             setTextoSalvo(texto);
             setEditadoManualmente(res.data?.editadoManualmente === true);
             setLacunas(Array.isArray(res.data?.lacunas) ? res.data.lacunas : []);
             toast.success("Texto final salvo.");
         } catch (err) {
+            if (!montado.current) return;
             toast.error(getApiErrorMessage(err, "Não foi possível salvar o texto."));
         } finally {
             setSalvando(false);
@@ -103,8 +109,10 @@ function TextoFinal({ documento }) {
         setBaixando(formato);
         try {
             const { nome } = await documentService.baixarEsalvar(id, formato);
+            if (!montado.current) return;
             toast.success(`${nome} baixado.`);
         } catch (err) {
+            if (!montado.current) return;
             toast.error(getApiErrorMessage(err, `Não foi possível baixar em ${formato.toUpperCase()}.`));
         } finally {
             setBaixando("");
@@ -115,9 +123,11 @@ function TextoFinal({ documento }) {
         setAlternandoPortal(true);
         try {
             const res = await documentService.alternarVisibilidadePortal(id, !visivelPortal);
+            if (!montado.current) return;
             setVisivelPortal(res.data?.visivelPortal === true);
             toast.success(res.data?.visivelPortal ? "Documento visível no portal do cliente." : "Documento oculto do portal do cliente.");
         } catch (err) {
+            if (!montado.current) return;
             toast.error(getApiErrorMessage(err, "Não foi possível alterar a visibilidade."));
         } finally {
             setAlternandoPortal(false);
@@ -135,10 +145,12 @@ function TextoFinal({ documento }) {
                 honorarioId: idDe(documento.honorarioId) ?? undefined,
                 confirmarSobrescrita: confirmarSobrescrita || undefined,
             });
+            if (!montado.current) return;
             setConflito(null);
             toast.success("Documento regerado a partir das seções.");
             navigate(`/documentos/${res.data._id}`, { replace: true });
         } catch (err) {
+            if (!montado.current) return;
             const status = err?.response?.status;
 
             if (status === 409) {
@@ -181,9 +193,11 @@ function TextoFinal({ documento }) {
         setModalExcluir(false);
         try {
             await documentService.deleteDocument(id);
+            if (!montado.current) return;
             toast.success("Documento excluído com sucesso.");
             navigate("/documentos");
         } catch (err) {
+            if (!montado.current) return;
             toast.error(getApiErrorMessage(err, "Erro ao excluir documento."));
         }
     };

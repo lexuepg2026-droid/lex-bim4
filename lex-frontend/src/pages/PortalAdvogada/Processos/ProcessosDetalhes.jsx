@@ -119,7 +119,7 @@ function ProcessosDetalhes() {
     useEffect(() => {
         buscarTudo(clientService.getAllClients)
             .then(setClientesDisponiveis)
-            .catch(() => {});
+            .catch((err) => toast.error(getApiErrorMessage(err, "Não foi possível carregar os clientes para vincular.")));
     }, []);
 
     const idsJaVinculados = participantes.map((p) => p.clienteId?._id);

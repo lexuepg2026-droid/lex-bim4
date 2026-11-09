@@ -12,6 +12,7 @@ import secaoService from "../../../services/secaoService";
 
 import { getApiErrorDetails, getApiErrorMessage } from "../../../utils/apiError";
 import { toast } from "../../../utils/toast";
+import useIsMounted from "../../../hooks/useIsMounted";
 import { buscarTudo } from "../../../utils/buscarTudo";
 import { labelDe, TIPO_DOCUMENTO_OPTIONS, TIPO_SECAO_OPTIONS } from "../../../utils/enums";
 
@@ -31,6 +32,9 @@ const secaoIdDe = (vinculo) => String(vinculo.secaoId?._id ?? vinculo.secaoId);
 
 function MontagemModelo({ documento, onAtualizado }) {
     const navigate = useNavigate();
+    // A resposta tardia não age numa tela que a advogada já deixou: adicionar uma
+    // seção e sair mostrava o toast em Processos (fase R2, guarda da 3.9).
+    const montado = useIsMounted();
     const id = documento._id;
 
     const [vinculos, setVinculos] = useState([]);
@@ -52,6 +56,7 @@ function MontagemModelo({ documento, onAtualizado }) {
 
     const recarregarVinculos = async () => {
         const res = await documentService.listDocumentSecoes(id);
+        if (!montado.current) return;
         setVinculos(res.data.data ?? res.data);
     };
 
@@ -89,9 +94,12 @@ function MontagemModelo({ documento, onAtualizado }) {
         setSalvando(true);
         try {
             await documentService.vincularSecao(id, { secaoId: secao._id });
+            if (!montado.current) return;
             await recarregarVinculos();
+            if (!montado.current) return;
             toast.success("Seção adicionada ao modelo.");
         } catch (err) {
+            if (!montado.current) return;
             toast.error(mensagemDeErro(err, "Não foi possível adicionar a seção."));
         } finally {
             setSalvando(false);
@@ -111,6 +119,7 @@ function MontagemModelo({ documento, onAtualizado }) {
         try {
             await documentService.reordenarSecoes(id, novaOrdem.map(secaoIdDe));
         } catch (err) {
+            if (!montado.current) return;
             setVinculos(anterior);
             toast.error(mensagemDeErro(err, "Não foi possível salvar a nova ordem."));
         } finally {
@@ -125,9 +134,12 @@ function MontagemModelo({ documento, onAtualizado }) {
         setSalvando(true);
         try {
             await documentService.desvincularSecao(id, secaoId);
+            if (!montado.current) return;
             await recarregarVinculos();
+            if (!montado.current) return;
             toast.success("Seção removida do modelo.");
         } catch (err) {
+            if (!montado.current) return;
             toast.error(mensagemDeErro(err, "Não foi possível remover a seção."));
         } finally {
             setSalvando(false);
@@ -149,10 +161,12 @@ function MontagemModelo({ documento, onAtualizado }) {
                 tipo: formEdicao.tipo,
                 descricao: formEdicao.descricao.trim(),
             });
+            if (!montado.current) return;
             onAtualizado(res.data);
             setFormEdicao(null);
             toast.success("Modelo atualizado com sucesso.");
         } catch (err) {
+            if (!montado.current) return;
             setErroEdicao(mensagemDeErro(err, "Erro ao salvar o modelo."));
         } finally {
             setSalvandoEdicao(false);
@@ -163,9 +177,11 @@ function MontagemModelo({ documento, onAtualizado }) {
         setModalExcluir(false);
         try {
             await documentService.deleteDocument(id);
+            if (!montado.current) return;
             toast.success("Modelo excluído com sucesso.");
             navigate("/modelos");
         } catch (err) {
+            if (!montado.current) return;
             toast.error(mensagemDeErro(err, "Erro ao excluir o modelo."));
         }
     };

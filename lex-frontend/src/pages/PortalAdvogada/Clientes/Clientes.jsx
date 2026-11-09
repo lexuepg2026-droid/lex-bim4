@@ -103,7 +103,12 @@ function Clientes() {
         return () => clearTimeout(t);
     }, [busca, setBuscaAtrasada]);
 
+    const ultimaBusca = useRef(0);
+
+    // Só a resposta da busca mais recente vale (fase R2). Com a lista em tela
+    // durante a carga, os filtros continuam montados e a corrida ficaria possível.
     const buscarClientes = () => {
+        const numero = ++ultimaBusca.current;
         setCarregando(true);
         setErro("");
 
@@ -115,11 +120,16 @@ function Clientes() {
             ordem,
         })
             .then((lista) => {
+                if (numero !== ultimaBusca.current) return;
                 setClientes(lista);
                 setTotal(lista.length);
             })
-            .catch((err) => setErro(getApiErrorMessage(err, "Falha ao buscar clientes.")))
-            .finally(() => setCarregando(false));
+            .catch((err) => {
+                if (numero === ultimaBusca.current) setErro(getApiErrorMessage(err, "Falha ao buscar clientes."));
+            })
+            .finally(() => {
+                if (numero === ultimaBusca.current) setCarregando(false);
+            });
     };
 
     useEffect(() => {
@@ -203,7 +213,8 @@ function Clientes() {
 
     const abrirDetalhes = (id) => navigate(`/clientes/detalhes/${id}`);
 
-    if (carregando) return <Loading />;
+    // O Loading fica na área da lista, e não no lugar da tela: a tela inteira
+    // desmontava a cada busca e o campo de busca perdia o foco (fase R2).
 
     return (
         <div className="tela telaClientes">
@@ -316,8 +327,10 @@ function Clientes() {
 
                 {erro && <p className="mensagemErro">{erro}</p>}
 
-                {clientes.length === 0 ? (
-                    <EmptyState titulo="Nenhum cliente encontrado." descricao="Tente ajustar os filtros ou cadastre um novo cliente." />
+                {carregando ? (
+                    <Loading />
+                ) : clientes.length === 0 ? (
+                    !erro && <EmptyState titulo="Nenhum cliente encontrado." descricao="Tente ajustar os filtros ou cadastre um novo cliente." />
                 ) : (
                     <div className="tabelaContainer">
                         <table className={`tabela ${modoSelecao ? "tabela--modoSelecao" : ""}`}>

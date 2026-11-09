@@ -189,6 +189,7 @@ export function ConfirmacoesDoProcesso({ processoId }) {
             const lista = res.data.data ?? res.data;
             setConfirmacoes(Array.isArray(lista) ? lista : []);
             if (Array.isArray(lista) && lista.some((c) => c.vistaPelaAdvogada === false)) {
+                // Marcar como vista é acessório: falhar aqui não pode esconder a lista.
                 processService.marcarConfirmacoesVistas(processoId).catch(() => {});
             }
         } catch (err) {

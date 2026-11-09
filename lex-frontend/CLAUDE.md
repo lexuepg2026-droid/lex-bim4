@@ -93,6 +93,73 @@ O texto original está em `docs/CLAUDE-front-v1.md`. O que muda no `lex-bim4`:
   `render.yaml` da raiz) e `tests/contrato.test.js` (rotas, enumerações e os
   valores dos filtros).
 
+## DEC-083 (reescrita para o front da Raniele) — o toast por tipo (fase R2)
+
+O texto original está em `docs/CLAUDE-front-v1.md`. No front dela:
+
+- `src/utils/toast.js`: `success`, `info` (a DEC-066: o tipo existe) e `error`,
+  com a duração de cada um (3 s, 4 s e 6 s) e a **deduplicação** da mesma
+  mensagem do mesmo tipo por 4 s. As funções puras (`duracaoDe`, `regiaoDe`,
+  `deveEmitir`) são testadas em `tests/toast.test.js`.
+- `src/components/ToastContainer/ToastContainer.jsx`: o contêiner fica **sempre
+  montado**, com duas regiões vivas no DOM desde o início (`role="status"`
+  para sucesso e info, `role="alert"` para erro); região criada junto com a
+  mensagem não é anunciada. Cada aviso tem um fechar com `.buttonNoBorder` e o
+  `fechar.svg` dela.
+- Visual: as classes dela (`toastItem`, `toastItem--*`); o `info` usa
+  `--verdeClaro` e `--bege`, que invertem sozinhos no tema claro. Nenhuma cor
+  nova. O contêiner cabe em 360 px (`max-width: min(24rem, calc(100vw - 3rem))`).
+
+## DEC-084 (reescrita para o front da Raniele) — o toast global de erro (fase R2)
+
+O interceptor da advogada (`src/api/axiosConfig.js`) emite toast só para o que
+**nenhuma tela sabe explicar**. A política é `deveExibirToastGlobal(erro,
+config, online)`, em `src/api/toastGlobal.js`:
+
+- **5xx**, **sem resposta com o navegador online** (back fora do ar) e **429**
+  viram toast;
+- **400, 403, 404, 409 e 422 ficam com a tela**, que sabe destacar o campo;
+- **sem sinal**, a camada offline já explicou (escrita barrada, enfileirada,
+  leitura do espelho): nada de toast;
+- `semToastGlobal: true` no config do axios desliga o toast para quem mostra o
+  erro de outro jeito.
+
+A frase é a de `src/utils/apiError.js` (`getApiErrorMessage`): a tela que
+também avisa usa a mesma frase, e a deduplicação deixa um aviso só.
+
+**O 401** (sessão perdida) não vira toast na hora: o interceptor recarrega a
+página para `/login` (`window.location`), e o toast morreria com ela. A mensagem
+vai para o `sessionStorage` (`lex:aviso-sessao`) antes do redirecionamento, e o
+`ToastContainer` a mostra ao montar, uma vez.
+
+**Erro não vira lista vazia.** Toda lista com `EmptyState` o desenha só sem
+erro (`!erro && <EmptyState …>`): Clientes, Processos, Honorários, Parcelas,
+Pagamentos, Documentos, Modelos e Seções. Na Home, "Todas as parcelas estão em
+dia" e "Sem dados mensais" só aparecem com a resposta na mão (com erro, a
+mensagem; durante a carga, "Carregando..."). No detalhe do cliente, as abas
+Processos e Pagamentos mostram o erro em vez de "nenhum". As cargas auxiliares
+(opções de seletor, catálogo de variáveis) avisam o erro; ficam vazios, com o
+motivo escrito, só a sugestão do próximo número da parcela, a marcação de
+confirmações vistas e o sino. Travas em `tests/toast.test.js` e
+`tests/listas.test.js`.
+
+## DEC-170 — as larguras mínimas das telas públicas e do portal (fase R2)
+
+A 360 px as telas públicas rolavam 24 px de lado e o portal deixava 150 px para
+o texto (auditoria de paridade, C.1). A correção é a mínima, sem redesenho:
+
+- **Telas públicas:** as cinco larguras fixas de 24 rem viraram
+  `min(24rem, 100%)` (`Login.css`: `input.login`, `.buttonLogin`, `.erroLogin`,
+  `.infoLogin`; `LayoutAutenticacao.css`: `.direitaAutenticacao a`). Acima de
+  384 px nada muda.
+- **Portal:** abaixo de 600 px, `.cardPortal` e `.cardPortal.cardPortalLargo`
+  ocupam 100% com padding de 1,5 rem × 1 rem, e `.secaoPortal` fica com 1 rem
+  (`Portal.css` e `ProcessoPortal.css`, cada arquivo com a `@media` das
+  próprias classes, para a ordem do bundle não desfazer a regra);
+  `.botoesDocumentoPortal` e `.acoesCabecalhoPortal` ganharam `flex-wrap`.
+
+Conferido a 360, 390 e 412 px (capturas `C1-depois-*`).
+
 ## Registro de sessões
 
 ### Fase R1 — monorepo, adoção e deploy (09/11/2026)
@@ -105,3 +172,16 @@ O texto original está em `docs/CLAUDE-front-v1.md`. O que muda no `lex-bim4`:
 - Testes: trava de contrato (nova), deploy (adaptado), e `moeda`,
   `percentualVetores`, `offline/fila` e `offline/idade` trazidos sem mudança.
 - Próximo passo: fase R2 (o que engana na demonstração).
+
+### Fase R2 — o que engana na demonstração (09/11/2026)
+
+- 360 px nas telas públicas e no portal (DEC-170).
+- Toast por tipo e toast global de erro (DEC-083 e DEC-084 reescritas); o
+  aviso do 401 sobrevive ao recarregamento.
+- Erro do back não vira lista vazia (oito listas, Home, detalhe do cliente);
+  as cargas auxiliares que engoliam o erro passam a avisar.
+- Só a resposta da busca mais recente vale (Clientes, Processos, Honorários,
+  Parcelas, Pagamentos); a busca de Clientes e Processos não perde o foco.
+- `useIsMounted` em TextoFinal e MontagemModelo (resposta tardia).
+- "Honorários em aberto" na Home (DEC-069).
+- Testes novos: `toast.test.js`, `listas.test.js`, `guardas.test.js`.

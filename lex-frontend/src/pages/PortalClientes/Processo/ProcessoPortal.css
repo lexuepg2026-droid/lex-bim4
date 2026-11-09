@@ -90,6 +90,7 @@
 
 .botoesDocumentoPortal {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
 }
 
@@ -120,6 +121,7 @@
 
 .acoesCabecalhoPortal {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
 }
@@ -175,4 +177,16 @@
 .seloPortal--alerta {
     background-color: var(--amareloStatus);
     color: var(--cinzaEscuro);
+}
+
+/* Telas estreitas (DEC-170): o cartão largo e as seções acompanham o cartão do portal. */
+@media (max-width: 600px) {
+    .cardPortal.cardPortalLargo {
+        width: 100%;
+        padding: 1.5rem 1rem;
+    }
+
+    .secaoPortal {
+        padding: 1rem;
+    }
 }

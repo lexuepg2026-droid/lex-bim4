@@ -65,7 +65,7 @@ function DocumentosLista() {
                 {carregando ? (
                     <p className="infoSecundariaDetalhe">Carregando...</p>
                 ) : documentos.length === 0 ? (
-                    <EmptyState
+                    !erro && <EmptyState
                         titulo={busca ? "Nenhum documento encontrado." : "Nenhum documento gerado ainda."}
                         descricao={busca ? "Tente outro nome, número do processo ou cliente." : "Vá em \"Meus modelos\" para gerar o primeiro."}
                     />

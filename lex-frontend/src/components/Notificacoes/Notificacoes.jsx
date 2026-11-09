@@ -57,6 +57,8 @@ function Notificacoes() {
                     return filtrado;
                 });
             })
+            // O sino consulta de novo sozinho; falha de servidor ou de rede já aparece no
+            // toast global (DEC-084), e repetir aqui seria o mesmo aviso a cada consulta.
             .catch(() => {});
     }, [salvarLidos]);
 

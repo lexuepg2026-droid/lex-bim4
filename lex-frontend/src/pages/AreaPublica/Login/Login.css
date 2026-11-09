@@ -8,21 +8,21 @@
 }
 
 input.login {
-    width: 24rem;
+    width: min(24rem, 100%);
 }
 
 .buttonLogin {
-    width: 24rem;
+    width: min(24rem, 100%);
 }
 .erroLogin {
-    width: 24rem;
+    width: min(24rem, 100%);
     color: var(--vermelhoTexto);
     font-size: 0.85rem;
     text-align: center;
 }
 
 .infoLogin {
-    width: 24rem;
+    width: min(24rem, 100%);
     color: var(--bege70);
     font-size: 0.9rem;
     text-align: center;
