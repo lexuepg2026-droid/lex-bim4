@@ -171,6 +171,7 @@ describe("contrato — os valores dos filtros das listas são os que o back acei
     ["Clientes/Clientes.jsx", "setFiltroTipo", chavesCongeladas(F, "TIPOS_PESSOA_NA_QUERY"), "TIPOS_PESSOA_NA_QUERY"],
     ["Clientes/Clientes.jsx", "setFiltroPortal", listaCongelada(F, "PORTAIS_DO_CLIENTE"), "PORTAIS_DO_CLIENTE"],
     ["Clientes/Clientes.jsx", "setOrdem", listaCongelada(F, "ORDENACOES_CLIENTE"), "ORDENACOES_CLIENTE"],
+    ["Calendario/Calendario.jsx", "setSituacao", listaCongelada(F, "SITUACOES"), "SITUACOES (GET /events)"],
   ];
 
   for (const [pagina, setter, aceitos, origem] of FILTROS) {

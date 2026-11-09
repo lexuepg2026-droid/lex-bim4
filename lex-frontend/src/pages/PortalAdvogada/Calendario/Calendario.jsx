@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 import { useNavigate } from "react-router-dom";
 
@@ -93,6 +93,10 @@ function Calendario() {
     const [vistaAtual, setVistaAtual] = useState("mes");
     const [mostrarFinsDeSemana, setMostrarFinsDeSemana] = useState(true);
     const [mostrarConcluidas, setMostrarConcluidas] = useState(true);
+    // Situação dos compromissos (fase R3, DEC-052): "ativos" é a Agenda de sempre;
+    // "inativos" mostra os compromissos desativados, para reativar.
+    const [situacao, setSituacao] = useState("ativos");
+    const ultimaBuscaAgenda = useRef(0);
     const [buscaTexto, setBuscaTexto] = useState("");
 
     const [form, setForm] = useState(null);
@@ -162,21 +166,40 @@ function Calendario() {
     for (let a = hoje.getFullYear() - 5; a <= hoje.getFullYear() + 5; a++) anos.push(a);
 
     const buscarCalendario = useCallback(() => {
+        const numero = ++ultimaBuscaAgenda.current;
         setCarregando(true);
         setErro("");
-        calendarService.getCalendario(inicioChave, fimChave)
-            .then((res) => {
-                const agrupado = {};
-                res.data.itens.forEach((item) => {
-                    if (!agrupado[item.data]) agrupado[item.data] = [];
-                    agrupado[item.data].push(item);
-                });
-                setItensPorDia(agrupado);
-                setHojeServidor(res.data.hoje);
+        const agrupar = (itens) => {
+            const agrupado = {};
+            itens.forEach((item) => {
+                if (!agrupado[item.data]) agrupado[item.data] = [];
+                agrupado[item.data].push(item);
+            });
+            return agrupado;
+        };
+        // GET /calendar só traz o que está ativo; os desativados vêm de
+        // GET /events?situacao=inativos, recortados ao período na tela.
+        const pedido = situacao === "inativos"
+            ? buscarTudo(eventService.listEvents, { situacao: "inativos" }).then((eventos) => ({
+                itens: eventos
+                    .filter((e) => e.data >= inicioChave && e.data <= fimChave)
+                    .map((e) => ({ ...e, natureza: "evento", subtitulo: e.tipoRotulo, desativado: true })),
+                hoje: null,
+            }))
+            : calendarService.getCalendario(inicioChave, fimChave).then((res) => res.data);
+        pedido
+            .then(({ itens, hoje }) => {
+                if (numero !== ultimaBuscaAgenda.current) return;
+                setItensPorDia(agrupar(itens));
+                if (hoje) setHojeServidor(hoje);
             })
-            .catch((err) => setErro(getApiErrorMessage(err, "Falha ao buscar a agenda.")))
-            .finally(() => setCarregando(false));
-    }, [inicioChave, fimChave]);
+            .catch((err) => {
+                if (numero === ultimaBuscaAgenda.current) setErro(getApiErrorMessage(err, "Falha ao buscar a agenda."));
+            })
+            .finally(() => {
+                if (numero === ultimaBuscaAgenda.current) setCarregando(false);
+            });
+    }, [inicioChave, fimChave, situacao]);
 
     useEffect(() => {
         buscarCalendario();
@@ -326,6 +349,19 @@ function Calendario() {
         }
     };
 
+    const reativarCompromisso = async (id) => {
+        setEventoPopup(null);
+        try {
+            await eventService.reactivateEvent(id);
+            toast.success("Compromisso reativado. Ele volta a aparecer em \"Somente ativos\".");
+            buscarCalendario();
+        } catch (err) {
+            // 409 quando o processo do compromisso está desativado: a frase do back
+            // diz qual processo reativar antes (DEC-053).
+            toast.error(getApiErrorMessage(err, "Não foi possível reativar o compromisso."));
+        }
+    };
+
     const itemConcluido = (item) => (item.natureza === "evento" ? item.concluido : item.status === "pago");
 
     const renderItem = (item) => {
@@ -435,6 +471,19 @@ function Calendario() {
                     </div>
 
                     <div className="calendarioCabecalhoDireita">
+                        <div className="select calendarioSelectNav">
+                            <select
+                                value={situacao}
+                                onChange={(e) => setSituacao(e.target.value)}
+                                className="selectForm"
+                                aria-label="Situação dos compromissos"
+                                title="Mostrar os compromissos ativos ou os desativados"
+                            >
+                                <option value="ativos">Somente ativos</option>
+                                <option value="inativos">Somente desativados</option>
+                            </select>
+                        </div>
+
                         <div className="calendarioBusca">
                             <img src={lupa} alt="" className="calendarioBuscaIcone" />
                             <input
@@ -719,7 +768,7 @@ function Calendario() {
                         style={{ top: eventoPopupInfo.top, left: eventoPopupInfo.left, width: LARGURA_POPUP }}
                     >
                         <div className="calendarioEventoPopupAcoes">
-                            {eventoPopup.item.natureza === "evento" ? (
+                            {eventoPopup.item.desativado ? null : eventoPopup.item.natureza === "evento" ? (
                                 <>
                                     <button
                                         type="button"
@@ -796,6 +845,20 @@ function Calendario() {
 
                                 {eventoPopup.item.descricao && (
                                     <p className="calendarioEventoPopupDetalhe">{eventoPopup.item.descricao}</p>
+                                )}
+
+                                {eventoPopup.item.desativado && (
+                                    <>
+                                        <p className="calendarioEventoPopupNota">Este compromisso está desativado.</p>
+                                        <button
+                                            type="button"
+                                            className="buttonOutlined botaoReativar"
+                                            title="Volta o compromisso para a agenda"
+                                            onClick={() => reativarCompromisso(eventoPopup.item._id)}
+                                        >
+                                            Reativar
+                                        </button>
+                                    </>
                                 )}
                             </>
                         ) : (

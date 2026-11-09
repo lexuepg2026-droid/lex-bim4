@@ -9,4 +9,12 @@ const concludeEvent = (id, concluido, versao) => api.patch(`/events/${id}/conclu
 
 const deleteEvent = (id) => api.delete(`/events/${id}`);
 
-export default { createEvent, updateEvent, concludeEvent, deleteEvent };
+// A lista de compromissos por situação (fase R3): a Agenda usa para mostrar os
+// desativados, que GET /calendar não traz. `situacao`: ativos, inativos ou todos.
+const listEvents = (params = {}) => api.get('/events', { params });
+
+// Desfaz a exclusão (soft delete) de um compromisso. O back recusa com 409 quando
+// o processo do compromisso está desativado, e a frase diz qual (DEC-053).
+const reactivateEvent = (id) => api.patch(`/events/${id}/reactivate`);
+
+export default { createEvent, updateEvent, concludeEvent, deleteEvent, listEvents, reactivateEvent };
