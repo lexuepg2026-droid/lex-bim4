@@ -8,7 +8,14 @@
     flex-direction: column;
     gap: 0.75rem;
 
-    max-width: min(24rem, calc(100vw - 3rem));
+    max-width: 24rem;
+}
+
+/* Telas estreitas (R4): o aviso não passa da borda; no desktop vale o 24rem dela. */
+@media (max-width: 480px) {
+    .toastContainer {
+        max-width: calc(100vw - 3rem);
+    }
 }
 
 /* As duas regiões vivas (DEC-083): sempre no DOM, vazias quando não há aviso. */
