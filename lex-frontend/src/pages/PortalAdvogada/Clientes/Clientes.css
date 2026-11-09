@@ -838,6 +838,10 @@ input[type="checkbox"]:checked::before, .checkboxMestre input[type="checkbox"]:c
     background-color: var(--cinzaMenu);
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+
+    /* R4: o text-indent de 7px da .parteSuperior vinha por herança e empurrava
+       os botões 7 px para fora do menu (defeito do original dela). */
+    text-indent: 0;
 }
 
 .menuSelecao button {
