@@ -160,6 +160,58 @@ o texto (auditoria de paridade, C.1). A correção é a mínima, sem redesenho:
 
 Conferido a 360, 390 e 412 px (capturas `C1-depois-*`).
 
+## DEC-164 (reescrita para o front da Raniele) — "Precisa de atenção" com processo e cliente (fase R3)
+
+O bloco "Parcelas que precisam de atenção" da Home (`Home.jsx`) dizia só o
+honorário e "Parcela N" (apontamento 3 da banca). Agora:
+
+- cada linha diz também **"processo · cliente"**, com o `processo` resumido que
+  `GET /installments` já manda (título ou número, e `clientePrincipalNome`);
+- **a linha inteira é um link** para o processo da parcela
+  (`/processos/detalhes/:id`). O `<li className="homeItemParcelaUrgente">` fica
+  (o `:last-child` e o hover dela continuam valendo) e o `Link` dentro dele
+  herda o layout do item (`display`, direção e espaçamento com `inherit`),
+  inclusive a coluna do celular. Sem cor nova; o foco é o anel `--bege70` dos
+  outros links da Home.
+
+## DEC-165 (reescrita para o front da Raniele) — o prazo por datas de calendário (fase R3)
+
+O vencimento chega como meia-noite UTC, e a Home o lia no fuso do navegador:
+em Brasília, a parcela de daqui a 2 dias saía "Vence amanhã" (reproduzido na
+auditoria de paridade, A.8). `src/utils/datas.js` compara **datas de
+calendário**: os dez primeiros caracteres do vencimento (`dataDeCalendario`)
+contra o dia de hoje no relógio de quem olha (`hojeLocal`).
+
+- `prazoDaParcela` devolve os textos da Raniele ("Venceu há N dias", "Venceu
+  ontem", "Vence hoje", "Vence amanhã", "Vence em N dias");
+- o recorte dos 7 dias usa a mesma conta (`venceAte`, `diaLocalDaquiA`);
+- a causa 1 da DEC-165 original (só a primeira página) não existe aqui:
+  `buscarTudo` baixa todas;
+- a causa 3 (o status `vencido` só é gravado num recálculo do back) continua
+  sendo regra do back e aguarda decisão.
+
+Trava: `tests/datas.test.js`, que passa em qualquer fuso (conferido com
+`America/Sao_Paulo`, `UTC` e `Asia/Tokyo`).
+
+## DEC-052 (reescrita para o front da Raniele) — reativar sem adivinhar (fase R3)
+
+- **Processo:** a prévia (`GET /processes/:id/activation-preview`) vem antes do
+  modal, e a frase diz quantos participantes voltam (`utils/ativacaoProcesso.js`,
+  dela). Já estava assim.
+- **Cliente:** **não consulta prévia**, porque não cascateia; o modal diz que os
+  processos dele não voltam junto. O modal dela já fazia isso (a auditoria de
+  paridade, A.7 item 2, tinha apontado falta por engano).
+- **Compromisso (novo):** a Agenda tem o seletor "Somente ativos" / "Somente
+  desativados". Os desativados vêm de `GET /events?situacao=inativos`,
+  recortados ao período na tela, e o popup deles troca Editar e Excluir por
+  "Reativar" (`PATCH /events/:id/reactivate`, com `.buttonOutlined
+  .botaoReativar`, o mesmo das listas). O 409 do processo desativado aparece com
+  a frase do back (DEC-053).
+- **O filtro de situação** manda `inativos`, o valor que o back aceita, em
+  Processos, Clientes e na Agenda; a trava de contrato confere os três.
+
+Trava: `tests/reativacao.test.js`.
+
 ## Registro de sessões
 
 ### Fase R1 — monorepo, adoção e deploy (09/11/2026)
@@ -185,3 +237,25 @@ Conferido a 360, 390 e 412 px (capturas `C1-depois-*`).
 - `useIsMounted` em TextoFinal e MontagemModelo (resposta tardia).
 - "Honorários em aberto" na Home (DEC-069).
 - Testes novos: `toast.test.js`, `listas.test.js`, `guardas.test.js`.
+
+### Fase R3 — "Precisa de atenção" e reativação (09/11/2026)
+
+- `utils/datas.js`: o prazo e o recorte dos 7 dias por datas de calendário
+  (DEC-165); a linha com "processo · cliente" e como link (DEC-164).
+- Reativação de compromisso na Agenda (DEC-052); o cliente já estava certo.
+- Testes novos: `datas.test.js`, `reativacao.test.js`; a trava de contrato
+  confere o seletor da Agenda.
+
+### O que fica para a sessão 2
+
+- O resto do Bloco A da paridade: aba "Financeiro" do cliente (renomeia a aba
+  "Pagamentos" quando ganhar as listas, DEC-167), gerações do reparcelamento e
+  "Parcela N de M" (DEC-048, DEC-051), pré-visualização da seção, régua de hoje
+  na linha do tempo (DEC-056), conferir a DEC-044 no extrato.
+- O login a 360 px, que continua em duas colunas (o formulário fica com cerca
+  de 170 px); é o desenho dela, fora da correção mínima da R2.
+- As guardas restantes (`regeneration.js`, `useSerialQueue`), os testes do grupo
+  (a), a acessibilidade, o lint e o restante do `CLAUDE.md` (seção B.4 da
+  paridade).
+- Pendente fora do código: a troca dos segredos (senha do banco e os dois JWT),
+  em `relatorios/RENDER-TROCA-PARA-LEX-BIM4.md`, seção "Pendente".

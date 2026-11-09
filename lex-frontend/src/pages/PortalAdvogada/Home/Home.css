@@ -376,6 +376,26 @@ a.homeCartao:hover {
     background-color: var(--bege5);
 }
 
+/* DEC-164: o link ocupa a linha e herda o layout do item (também a coluna do
+   celular), sem cor nova. */
+.homeItemLinkParcela {
+    display: inherit;
+    flex-direction: inherit;
+    align-items: inherit;
+    justify-content: inherit;
+    gap: inherit;
+    flex: 1;
+    align-self: stretch;
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+}
+
+.homeItemLinkParcela:focus-visible {
+    outline: 2px solid var(--bege70);
+    outline-offset: 2px;
+}
+
 .homeItemCorpo {
     display: flex;
     flex-direction: column;
