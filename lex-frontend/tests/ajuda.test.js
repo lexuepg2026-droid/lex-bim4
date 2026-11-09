@@ -101,9 +101,14 @@ describe("Ajuda — o balão nunca sai da tela", () => {
 describe("Ajuda — os textos", () => {
   const frases = (t) => t.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ"])/).filter(Boolean);
 
+  // Exceção aprovada pelo Daniel na revisão dos textos: o "Resumo geral" é uma
+  // lista de quatro definições curtas, uma por cartão ("Processos ativos: …").
+  const LIMITE = { inicioResumo: 4 };
+
   for (const [chave, { assunto, texto }] of Object.entries(AJUDA)) {
-    test(`${chave}: até 3 frases e assunto em minúsculas`, () => {
-      assert.ok(frases(texto).length <= 3, `${chave} tem ${frases(texto).length} frases`);
+    const limite = LIMITE[chave] ?? 3;
+    test(`${chave}: até ${limite} frases e assunto em minúsculas`, () => {
+      assert.ok(frases(texto).length <= limite, `${chave} tem ${frases(texto).length} frases`);
       assert.ok(assunto && assunto === assunto.toLowerCase(), chave);
     });
   }

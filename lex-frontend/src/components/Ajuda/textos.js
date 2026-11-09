@@ -45,7 +45,7 @@ export const AJUDA = {
     },
     honorarioTipo: {
         assunto: "tipo de honorário",
-        texto: "Fixo: um valor em reais. Percentual: o sistema calcula o valor pelo percentual sobre o valor base, arredondado em centavos. Custas: despesas do processo cobradas do cliente.",
+        texto: "Fixo: um valor em reais. Percentual: o sistema calcula o valor pelo percentual sobre o valor base, arredondado em centavos. Custas: despesas do processo, como taxas e diligências, que o cliente reembolsa.",
     },
     parcelaVencimento: {
         assunto: "vencimento da parcela",
@@ -65,7 +65,7 @@ export const AJUDA = {
     },
     anularEstorno: {
         assunto: "anular estorno",
-        texto: "Anular faz o valor voltar a contar como pago. Ele procura parcelas de novo, da mais antiga para a mais nova, e não necessariamente as mesmas de antes. O estorno e a anulação continuam no extrato.",
+        texto: "Anular faz o valor voltar a contar como pago. Ele é distribuído de novo entre as parcelas em aberto, da mais antiga para a mais nova, não necessariamente as mesmas de antes. O estorno e a anulação continuam no extrato.",
     },
     extrato: {
         assunto: "extrato",
@@ -117,7 +117,7 @@ export const AJUDA = {
     },
     regerar: {
         assunto: "regerar",
-        texto: "Regerar cria o documento de novo, com as seções e os dados de hoje. Se este texto foi editado à mão, o sistema pede confirmação e, confirmando, substitui o anterior, que fica guardado. O documento regerado nasce fora do portal, mesmo que o anterior estivesse visível.",
+        texto: "Regerar cria o documento de novo, com as seções e os dados de hoje. Se este texto foi editado à mão, o sistema pede confirmação e, confirmando, o novo substitui o anterior, que sai da lista. O documento regerado nasce fora do portal, mesmo que o anterior estivesse visível.",
     },
     visivelPortal: {
         assunto: "visível no portal",
@@ -141,7 +141,7 @@ export const AJUDA = {
     // ── Início ──────────────────────────────────────────────────────────────
     inicioResumo: {
         assunto: "o que cada cartão soma",
-        texto: "Processos ativos conta os de status ativo; honorários em aberto, os pendentes e os parcialmente pagos. Parcelas vencidas são as que passaram do vencimento sem pagamento. Confirmações novas são leituras do portal que você ainda não viu.",
+        texto: "Processos ativos: os de status ativo. Honorários em aberto: os pendentes e os parcialmente pagos. Parcelas vencidas: as que passaram do vencimento sem pagamento. Confirmações novas: leituras do portal que você ainda não viu.",
     },
     inicioAtencao: {
         assunto: "precisa de atenção",
