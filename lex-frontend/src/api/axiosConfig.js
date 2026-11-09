@@ -11,6 +11,7 @@ import { usuarioAtual } from '../offline/currentUser';
 import { CABECALHO_VERSAO } from '../offline/versionHeader';
 import { offlineErrorMessage } from '../offline/offlineMessages';
 import { guardarResposta, respostaDoEspelho } from '../offline/leituraOffline';
+import { deveExibirToastGlobal, mensagemDoToastGlobal, guardarAvisoDeSessao } from './toastGlobal';
 
 const api = axios.create({
     baseURL: BASE_URL,
@@ -75,8 +76,17 @@ api.interceptors.response.use(
         if (ehSessaoPerdida(error.response?.status, haviaSessao()) && !isRedirecting) {
             isRedirecting = true;
             registrarSessao(false);
-            toast.error('Sessão expirada. Faça login novamente.');
+            // O redirecionamento recarrega a página: a mensagem vai para o
+            // sessionStorage e o ToastContainer a mostra no login (DEC-084).
+            guardarAvisoDeSessao(window.sessionStorage);
             window.location.href = '/login';
+            return Promise.reject(error);
+        }
+
+        // DEC-084: 5xx, sem resposta e 429 viram toast aqui, porque nenhuma
+        // tela sabe explicá-los. 400/409/422 ficam com a tela.
+        if (deveExibirToastGlobal(error, error.config, online)) {
+            toast.error(mensagemDoToastGlobal(error));
         }
         return Promise.reject(error);
     }
