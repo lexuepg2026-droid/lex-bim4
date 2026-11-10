@@ -136,6 +136,23 @@ export const escreverDataDeCalendario = (valor) => {
 export const hojeComoDataDeCalendario = (agora = new Date()) =>
   escreverDataDeCalendario(agora);
 
+// ── "Hoje" no ESCRITÓRIO (Fase 4a3) ───────────────────────────────────────
+//
+// O `hojeComoDataDeCalendario` acima lê o dia UTC: das 21h à meia-noite de
+// Brasília ele já é "amanhã". Para dizer se um vencimento JÁ PASSOU, o dia que
+// vale é o do escritório, em `America/Sao_Paulo` — a mesma conta da DEC-165 no
+// front (o vencimento como data de calendário contra o dia local de hoje).
+//
+// `en-CA` porque é o locale cujo formato curto é `AAAA-MM-DD`.
+const FORMATO_DO_ESCRITORIO = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+});
+
+export const hojeNoEscritorio = (agora = new Date()) => FORMATO_DO_ESCRITORIO.format(agora);
+
 // O mesmo "hoje", em `Date` de meia-noite UTC, para entrar em filtro do Mongo
 // (`{ $lt: inicioDeHoje }`). Sai da mesma fonte que a string acima, de
 // propósito: duas leituras independentes do relógio poderiam cair em dias
@@ -175,6 +192,7 @@ export default {
   lerDataDeCalendario,
   escreverDataDeCalendario,
   hojeComoDataDeCalendario,
+  hojeNoEscritorio,
   inicioDoDiaUTC,
   fimDoDiaUTC,
   horaValida
