@@ -5,6 +5,7 @@ import sininho from "../../assets/images/icons/sino.svg";
 import calendarService from "../../services/calendarService";
 import { useAuth } from "../../contexts/AuthContext";
 import { chaveDoUsuario } from "../../utils/dadosDoUsuario";
+import { resumoDoSino } from "./resumoDoSino";
 
 import "./Notificacoes.css";
 
@@ -109,7 +110,8 @@ function Notificacoes() {
             <button
                 type="button"
                 className="sininhoBotao"
-                title="Notificações"
+                title={resumoDoSino(avisos ? naoLidos : null)}
+                aria-label={resumoDoSino(avisos ? naoLidos : null)}
                 onClick={() => setAberto((valor) => !valor)}
             >
                 <img src={sininho} alt="Notificações" />
