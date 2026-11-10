@@ -261,8 +261,9 @@ contra o dia de hoje no relógio de quem olha (`hojeLocal`).
 - o recorte dos 7 dias usa a mesma conta (`venceAte`, `diaLocalDaquiA`);
 - a causa 1 da DEC-165 original (só a primeira página) não existe aqui:
   `buscarTudo` baixa todas;
-- a causa 3 (o status `vencido` só é gravado num recálculo do back) continua
-  sendo regra do back e aguarda decisão.
+- a causa 3 (o status `vencido` só era gravado num recálculo do back) foi
+  resolvida no back na R6 (DEC-174): antes das leituras, as pendentes vencidas
+  viram `vencido`, pela mesma conta de datas, no fuso de Brasília.
 
 Trava: `tests/datas.test.js`, que passa em qualquer fuso (conferido com
 `America/Sao_Paulo`, `UTC` e `Asia/Tokyo`).
@@ -285,6 +286,28 @@ Trava: `tests/datas.test.js`, que passa em qualquer fuso (conferido com
   Processos, Clientes e na Agenda; a trava de contrato confere os três.
 
 Trava: `tests/reativacao.test.js`.
+
+## DEC-173 e DEC-174 no front (fase R6, 10/11/2026)
+
+As duas regras moram no back (`lex-backend/CLAUDE.md`). No front:
+
+- **DEC-173 (regerar sempre substitui):** o `TextoFinal` já ia para o documento
+  novo (`navigate(..., { replace: true })`, depois da guarda `montado.current`
+  da R2), e continua. O balão "Regerar" e a linha do "Como usar" foram
+  reescritos (textos do Daniel, em `relatorios/AJUDA-TEXTOS.md`). Trava:
+  `tests/regerar.test.js`.
+- **DEC-174 (vencido gravado):** o sino diz o que o número soma no
+  `aria-label` e no `title` ("Notificações: 2 compromissos de hoje e 1 parcela
+  vencida"), contando só as não lidas, como o número. O desenho não muda.
+  `components/Notificacoes/resumoDoSino.js`; trava: `tests/sino.test.js`.
+
+## Celular: o modal rola por dentro (fase R6)
+
+`components/Modal/Modal.css`, só em `@media (max-width: 600px)`: `.modalCaixa`
+com `max-height: calc(100dvh - 2rem)` e `overflow-y: auto`, a regra que o
+`.calendarioFormCaixa` e o `.gerarCaixa` dela já tinham. "Registrar pagamento"
+cortava o topo (título e "?") a 360, 390 e 412 px; parcela, reparcelar e
+honorário, a 360 px. Defeito que já existia no original dela.
 
 ## Registro de sessões
 
@@ -343,6 +366,14 @@ Trava: `tests/reativacao.test.js`.
 - Pendência registrada, sem mexer no back (peça protegida): regerar um
   documento que **não** foi editado à mão cria um segundo documento e o
   anterior continua na lista (`documentGenerationService.js:570` e `:633`).
+
+### Fase R6 — correções de funcionamento (10/11/2026)
+
+- Back: o `vencido` gravado antes das leituras (DEC-174) e regerar sempre
+  substitui (DEC-173).
+- Front: o sino diz o que soma; os textos do regerar; o modal rola por dentro
+  no celular.
+- Testes novos: `sino.test.js`, `regerar.test.js`.
 
 ### O que fica para a sessão 2
 

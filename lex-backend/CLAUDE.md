@@ -7024,6 +7024,74 @@ Só acréscimo; sem o parâmetro as listagens são as de sempre. Serve à aba
 consumidor no front**. As rotas continuam aqui, sem mudança: tirar rota é
 mudar contrato.
 
+## DEC-173 — regerar sempre substitui o anterior (fase R6, 10/11/2026)
+
+**Decisão do Daniel** (decisão 1 da sessão A). Muda uma peça protegida, os três
+caminhos da regeração em `gerarDocumentoService`
+(`services/documentGenerationService.js`).
+
+| Caminho | Antes (até a R5) | Agora |
+|---|---|---|
+| sem anterior (modelo + processo + cliente) | cria | cria |
+| anterior **sem** edição à mão | cria; o anterior **continuava ativo** e a lista ganhava uma cópia | cria e substitui, direto |
+| anterior **editado** à mão | 409 sem `confirmarSobrescrita`; com ela, cria e substitui | igual |
+
+- "Substitui" é o que o caminho confirmado já fazia: o anterior sai por soft
+  delete (`ativo: false`) e grava `substituidoPorId` apontando para o novo.
+- O regerado continua nascendo **fora do portal** nos três caminhos
+  (`visivelPortal: false`, `models/Document.js`); o 409 continua avisando
+  `sairaDoPortal`.
+- "O mesmo documento" continua sendo modelo + processo + cliente
+  (`buscarGeradoAnterior`): outro cliente do mesmo processo é documento novo.
+- Vale também para "Gerar" a partir do modelo quando já existe um documento
+  ativo para o mesmo processo e cliente: é o mesmo serviço.
+- Testes: `tests/documents/regerar173.test.js` (4). Sem a mudança, 2 caem.
+  `tests/documents/lista39.test.js` montava quatro documentos regerando o
+  mesmo modelo e passa a usar dois modelos (o arranjo, não a regra testada).
+- Textos de ajuda reescritos (balão "Regerar" e a linha do "Como usar"), DEC-172.
+
+## DEC-174 — o status "vencido" gravado antes das leituras (Fase 4a3, fase R6, 10/11/2026)
+
+A causa 3 da investigação da 4a2: o status da parcela só era derivado numa
+gravação, e uma parcela `pendente` cujo vencimento passava sem ninguém mexer
+no honorário continuava `pendente`. Implementada a opção B daquela fase.
+
+- **Antes das leituras que dependem do status**, o middleware
+  `atualizarVencidas` (`services/vencimentoService.js`) grava como `vencido` as
+  parcelas `pendente`, ativas, **da advogada da sessão**, cujo vencimento já
+  passou. Rotas: `GET /dashboard/*`, `GET /financeiro/*`, `GET /calendar` e
+  `/calendar/avisos` (o sino), `GET /installments` e `/:id`, `GET /fees` e
+  `/:id`, `GET /fees/:id/statement` (o extrato).
+- **"Já passou" é data de calendário em `America/Sao_Paulo`**, a regra da
+  DEC-165 do front: o vencimento (gravado como meia-noite UTC) lido como
+  `AAAA-MM-DD` contra o dia de hoje no escritório (`hojeNoEscritorio`, em
+  `utils/dataDeCalendario.js`). A parcela vence no dia e fica vencida a partir
+  da meia-noite de Brasília do dia seguinte.
+- **O recálculo usa a mesma regra.** `definirStatusInstallment`
+  (`services/paymentService.js`) comparava instantes, e a parcela virava
+  `vencido` no próprio dia do vencimento (meia-noite UTC é 21h do dia anterior
+  em Brasília). Agora compara datas. Mudança de regra; teste abaixo.
+- **`parcial` continua `parcial`**; `pago` e `cancelado` não são tocados.
+- **A mesma cadeia de sempre:** cada parcela passa por
+  `recalcularStatusInstallment` (origem `recalculo`), que recalcula o honorário
+  junto. Não há segunda fórmula. O extrato mostra as mudanças de status **do
+  honorário** (`historicoStatus`, DEC-038); `pendente` → `vencido` na parcela
+  não muda o status do honorário (continua `pendente` ou `parcialmente_pago`),
+  então não gera linha nova, exatamente como já acontecia quando um recálculo
+  comum fazia a mesma mudança.
+- **Freio de 10 minutos por advogada**, na memória do processo (`FREIO_MS`).
+  Leituras simultâneas esperam a mesma varredura. Num reinício (o Render
+  gratuito hiberna), a primeira leitura varre de novo. Se a varredura falhar,
+  a leitura segue com o que está gravado e o erro vai para o log.
+- O portal do cliente não passa por aqui (não lê status de parcela).
+- Testes: `tests/financial/vencidas4a3.test.js` (8): o dia seguinte e não o
+  próprio dia, a meia-noite de Brasília, a regra do recálculo, a parcial, o
+  freio, as leituras simultâneas, o isolamento por advogada e a leitura pela
+  API (Início, sino e `?status=vencido`). Mutação: `$lt` → `$lte` derruba 3;
+  sem `usuarioId` no filtro, a suíte cai.
+- **No front:** o sino diz o que soma no `aria-label` e no `title`
+  (`components/Notificacoes/resumoDoSino.js`).
+
 ## Registro de sessões — original (2026-05)
 
 ### Sessão — 2026-05-06
