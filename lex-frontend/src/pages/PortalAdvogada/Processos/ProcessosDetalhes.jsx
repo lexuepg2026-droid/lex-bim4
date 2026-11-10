@@ -42,6 +42,8 @@ import { mensagemDesativarProcesso } from "../../../utils/ativacaoProcesso";
 
 import { SituacaoPagamento, EstornosDoPagamento, EstornoModal, ObservacoesModal, podeEstornar, valorLiquidoDe } from "../Financeiro/AcoesPagamento";
 import { LiberacaoPortal, EntregaAcesso, ConfirmacoesDoProcesso } from "./AcessoPortal";
+import Ajuda, { TextoComAjuda } from "../../../components/Ajuda/Ajuda";
+import { AJUDA, APOIO } from "../../../components/Ajuda/textos";
 import DocumentosDoProcesso from "./DocumentosDoProcesso";
 
 import "./Processos.css";
@@ -767,6 +769,7 @@ function ProcessosDetalhes() {
                             <button title="Adicionar o cliente escolhido ao processo" type="submit" className="button" disabled={!novoClienteId || adicionando}>
                                 {adicionando ? "Vinculando..." : "Vincular"}
                             </button>
+                            <Ajuda assunto={AJUDA.processoParticipantes.assunto}>{AJUDA.processoParticipantes.texto}</Ajuda>
                         </form>
 
                         <ConfirmacoesDoProcesso processoId={id} />
@@ -776,6 +779,7 @@ function ProcessosDetalhes() {
                 {aba === "financeiro" && (
                     <div className="secaoDetalhe">
                         <div className="financeiroDetalheTopo">
+                            <Ajuda assunto={AJUDA.processoFinanceiro.assunto}>{AJUDA.processoFinanceiro.texto}</Ajuda>
                             <button title="Cadastrar um honorário neste processo" type="button" className="button" onClick={abrirNovoHonorario}>
                                 + Novo honorário
                             </button>
@@ -948,7 +952,7 @@ function ProcessosDetalhes() {
             {formHonorario && (
                 <div className="modalOverlay" onClick={fecharFormHonorario}>
                     <div className="modalCaixa" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                        <h2 className="modalTitulo">{formHonorario._id ? "Editar honorário" : "Novo honorário"}</h2>
+                        <h2 className="modalTitulo">{formHonorario._id ? "Editar honorário" : "Novo honorário"}<Ajuda assunto={AJUDA.honorarioNovo.assunto}>{AJUDA.honorarioNovo.texto}</Ajuda></h2>
                         <ContextoDoProcesso processo={processo} cliente={clientePrincipal} />
                         <p className="notaCampo">Os valores do financeiro não aparecem no portal do cliente.</p>
 
@@ -968,7 +972,7 @@ function ProcessosDetalhes() {
 
                             <div className="calendarioFormLinha">
                                 <div className="divLabelTop">
-                                    <label htmlFor="tipoHonorario">Tipo</label>
+                                    <label htmlFor="tipoHonorario">Tipo<Ajuda assunto={AJUDA.honorarioTipo.assunto}>{AJUDA.honorarioTipo.texto}</Ajuda></label>
                                     <select
                                         id="tipoHonorario"
                                         name="tipo"
@@ -1101,9 +1105,10 @@ function ProcessosDetalhes() {
                                         value={formParcela.numeroParcela}
                                         onChange={handleParcelaChange}
                                         className={campoComErroFinanceiro === "numeroParcela" ? "input-erro" : undefined}
+                                        aria-describedby="apoio-parcela-numero"
                                         required
                                     />
-                                    <small className="notaCampo">Já vem com o próximo número livre deste honorário. Não pode repetir o de outra parcela dele.</small>
+                                    <small className="notaCampo" id="apoio-parcela-numero">Já vem com o próximo número livre deste honorário. Não pode repetir o de outra parcela dele.</small>
                                 </div>
 
                                 <div className="divLabelTop">
@@ -1120,16 +1125,17 @@ function ProcessosDetalhes() {
                             </div>
 
                             <div className="divLabelTop">
-                                <label htmlFor="dataVencimentoParcela">Data de vencimento</label>
+                                <label htmlFor="dataVencimentoParcela">Data de vencimento<Ajuda assunto={AJUDA.parcelaVencimento.assunto}>{AJUDA.parcelaVencimento.texto}</Ajuda></label>
                                 <input
                                     id="dataVencimentoParcela"
                                     name="dataVencimento"
                                     type="date"
                                     value={formParcela.dataVencimento}
                                     onChange={handleParcelaChange}
+                                    aria-describedby="apoio-parcela-vencimento"
                                     required
                                 />
-                                <small className="notaCampo">Parcelas vencidas ou que vencem nos próximos 7 dias aparecem em destaque na Home.</small>
+                                <small className="notaCampo" id="apoio-parcela-vencimento">Parcelas vencidas ou que vencem nos próximos 7 dias aparecem em destaque na Home.</small>
                             </div>
 
                             {erroFinanceiro && <p className="mensagemErro">{erroFinanceiro}</p>}
@@ -1148,7 +1154,7 @@ function ProcessosDetalhes() {
             {formPagamento && (
                 <div className="modalOverlay" onClick={fecharFormPagamento}>
                     <div className="modalCaixa" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                        <h2 className="modalTitulo">Registrar pagamento</h2>
+                        <h2 className="modalTitulo">Registrar pagamento<Ajuda assunto={AJUDA.pagamentoDistribuicao.assunto}>{AJUDA.pagamentoDistribuicao.texto}</Ajuda></h2>
                         <ContextoDoProcesso processo={processo} cliente={clientePrincipal} honorario={formPagamento.honorarioSelecionado} />
                         <p className="notaCampo">Depois de salvo, só as observações podem ser alteradas. Para corrigir um valor, use "Estornar" no pagamento.</p>
 
@@ -1231,8 +1237,10 @@ function ProcessosDetalhes() {
                                         type="date"
                                         value={formPagamento.data}
                                         onChange={handlePagamentoChange}
+                                        aria-describedby="apoio-pagamento-data"
                                         required
                                     />
+                                    <small className="notaCampo" id="apoio-pagamento-data">{APOIO.pagamentoData}</small>
                                 </div>
 
                                 <div className="divLabelTop">
@@ -1297,7 +1305,7 @@ function ProcessosDetalhes() {
             {extrato && (
                 <div className="modalOverlay" onClick={fecharExtrato}>
                     <div className="modalCaixa" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                        <h2 className="modalTitulo">Extrato — {extrato.honorario.descricao}</h2>
+                        <h2 className="modalTitulo tituloComAjudaPendurada"><TextoComAjuda texto={`Extrato — ${extrato.honorario.descricao}`} assunto={AJUDA.extrato.assunto} pendurado>{AJUDA.extrato.texto}</TextoComAjuda></h2>
 
                         {extrato.carregando ? (
                             <p className="infoSecundariaDetalhe">Carregando...</p>
@@ -1346,7 +1354,7 @@ function ProcessosDetalhes() {
             {formReparcelamento && (
                 <div className="modalOverlay" onClick={fecharFormReparcelamento}>
                     <div className="modalCaixa" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-                        <h2 className="modalTitulo">Reparcelar — {formReparcelamento.honorario.descricao}</h2>
+                        <h2 className="modalTitulo"><TextoComAjuda texto={`Reparcelar — ${formReparcelamento.honorario.descricao}`} assunto={AJUDA.reparcelar.assunto}>{AJUDA.reparcelar.texto}</TextoComAjuda></h2>
                         <ContextoDoProcesso processo={processo} cliente={clientePrincipal} honorario={formReparcelamento.honorario} />
 
                         <p className="infoSecundariaDetalhe">

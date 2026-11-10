@@ -15,6 +15,8 @@ import EmptyState from "../../../components/EmptyState/EmptyState";
 import SecoesLista from "./SecoesLista";
 import GerarDocumento from "./GerarDocumento";
 import "./Documentos.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 const mensagemDeErro = (err, fallback) => {
     const detalhes = getApiErrorDetails(err);
@@ -89,7 +91,7 @@ function MeusModelos() {
 
             <div className="modelosGrade">
                 <aside className="modelosMenu">
-                    <h1 className="modelosMenuTitulo">Meus modelos</h1>
+                    <h1 className="modelosMenuTitulo">Meus modelos<Ajuda assunto={AJUDA.modelos.assunto}>{AJUDA.modelos.texto}</Ajuda></h1>
 
                     <button title="Bases dos documentos, montadas com as seções" type="button" className={`detalheAba ${aba === "modelos" ? "detalheAbaAtiva" : ""}`} onClick={() => setAba("modelos")}>
                         Modelos

@@ -17,6 +17,8 @@ import FiltroDeOpcoes from "../../../components/FiltroDeOpcoes/FiltroDeOpcoes";
 import { filtrarOpcoes } from "../../../utils/filtrarOpcoes";
 import { STATUS_PROCESSO_OPTIONS, FASE_PROCESSO_OPTIONS, PAPEL_PROCESSO_OPTIONS } from "../../../utils/enums";
 
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 import "./Processos.css";
 
 const FORM_VAZIO = {
@@ -201,39 +203,39 @@ function ProcessosForm() {
                         <h3>Dados do processo</h3>
                         <div className="tituloInput informacaoNormal">
                             <label>Título*</label>
-                            <input type="text" name="titulo" value={formData.titulo} onChange={handleChange} required />
-                            <small className="notaCampo">Nome curto para reconhecer o processo nas listas. O cliente também vê no portal.</small>
+                            <input type="text" name="titulo" value={formData.titulo} onChange={handleChange} required aria-describedby="apoio-processo-titulo" />
+                            <small className="notaCampo" id="apoio-processo-titulo">Nome curto para reconhecer o processo nas listas. O cliente também vê no portal.</small>
                         </div>
                         <div className="tituloInput informacaoPequena">
                             <label>Número do processo</label>
-                            <input type="text" name="numeroProcesso" value={formData.numeroProcesso} onChange={handleChange} />
-                            <small className="notaCampo">Número CNJ, se já existir. Ex.: 0001234-56.2026.8.16.0019</small>
+                            <input type="text" name="numeroProcesso" value={formData.numeroProcesso} onChange={handleChange} aria-describedby="apoio-processo-numero" />
+                            <small className="notaCampo" id="apoio-processo-numero">Número CNJ, se já existir. Ex.: 0001234-56.2026.8.16.0019</small>
                         </div>
                         <div className="tituloInput informacaoPequena">
-                            <label>Tipo de ação</label>
-                            <input type="text" name="tipoAcao" list="tiposDeAcao" value={formData.tipoAcao} onChange={handleChange} onFocus={ativarClassesCnj} />
+                            <label>Tipo de ação<Ajuda assunto={AJUDA.processoTipoAcao.assunto}>{AJUDA.processoTipoAcao.texto}</Ajuda></label>
+                            <input type="text" name="tipoAcao" list="tiposDeAcao" value={formData.tipoAcao} onChange={handleChange} onFocus={ativarClassesCnj} aria-describedby="apoio-processo-tipo" />
                             <datalist id="tiposDeAcao">
                                 {[...new Set([...tiposDeAcao, ...classesCnj])].map((tipo) => <option key={tipo} value={tipo} />)}
                             </datalist>
-                            <small className="notaCampo">Sugere os tipos que você já usou e as classes do CNJ, mas aceita qualquer texto. A lista de processos é agrupada por ele.</small>
+                            <small className="notaCampo" id="apoio-processo-tipo">Sugere os tipos que você já usou e as classes do CNJ, mas aceita qualquer texto. A lista de processos é agrupada por ele.</small>
                         </div>
                         <div className="tituloInput informacaoPequena">
                             <label>Área</label>
-                            <input type="text" name="area" list="assuntosCnj" value={formData.area} onChange={handleChange} onFocus={ativarAssuntosCnj} />
+                            <input type="text" name="area" list="assuntosCnj" value={formData.area} onChange={handleChange} onFocus={ativarAssuntosCnj} aria-describedby="apoio-processo-area" />
                             <datalist id="assuntosCnj">
                                 {assuntosCnj.map((assunto) => <option key={assunto} value={assunto} />)}
                             </datalist>
-                            <small className="notaCampo">Sugere os assuntos do CNJ. Ex.: Direito Previdenciário.</small>
+                            <small className="notaCampo" id="apoio-processo-area">Sugere os assuntos do CNJ. Ex.: Direito Previdenciário.</small>
                         </div>
                         {editando && (
                             <div className="tituloInput informacaoPequena">
-                                <label>Status</label>
+                                <label>Status<Ajuda assunto={AJUDA.processoStatus.assunto}>{AJUDA.processoStatus.texto}</Ajuda></label>
                                 <div className="select">
-                                    <select name="status" value={formData.status} onChange={handleChange}>
+                                    <select name="status" value={formData.status} onChange={handleChange} aria-describedby="apoio-processo-status">
                                         {STATUS_PROCESSO_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                     </select>
                                 </div>
-                                <small className="notaCampo">Situação administrativa. O andamento é a fase, mais abaixo.</small>
+                                <small className="notaCampo" id="apoio-processo-status">Situação administrativa. O andamento é a fase, mais abaixo.</small>
                             </div>
                         )}
                         <div className="tituloInput informacaoPequena">
@@ -246,11 +248,11 @@ function ProcessosForm() {
                         </div>
                         <div className="tituloInput informacaoPequena">
                             <label>Comarca</label>
-                            <input type="text" name="comarca" list="comarcasPr" value={formData.comarca} onChange={handleChange} onFocus={ativarComarcas} />
+                            <input type="text" name="comarca" list="comarcasPr" value={formData.comarca} onChange={handleChange} onFocus={ativarComarcas} aria-describedby="apoio-processo-comarca" />
                             <datalist id="comarcasPr">
                                 {comarcas.map((comarca) => <option key={comarca} value={comarca} />)}
                             </datalist>
-                            <small className="notaCampo">Sugere as comarcas do Paraná, mas aceita qualquer outra.</small>
+                            <small className="notaCampo" id="apoio-processo-comarca">Sugere as comarcas do Paraná, mas aceita qualquer outra.</small>
                         </div>
                         <div className="tituloInput informacaoPequena">
                             <label>Data de distribuição</label>
@@ -258,13 +260,13 @@ function ProcessosForm() {
                         </div>
                         <div className="tituloInput informacaoGrande">
                             <label>Descrição</label>
-                            <textarea name="descricao" value={formData.descricao} onChange={handleChange} rows={3} />
-                            <small className="notaCampo">O cliente lê este texto no portal. Escreva de um jeito que ele entenda.</small>
+                            <textarea name="descricao" value={formData.descricao} onChange={handleChange} rows={3} aria-describedby="apoio-processo-descricao" />
+                            <small className="notaCampo" id="apoio-processo-descricao">O cliente lê este texto no portal. Escreva de um jeito que ele entenda.</small>
                         </div>
                     </div>
 
                     <div className="secaoForm">
-                        <h3>Liminar</h3>
+                        <h3>Liminar<Ajuda assunto={AJUDA.processoLiminar.assunto}>{AJUDA.processoLiminar.texto}</Ajuda></h3>
                         <p className="notaForm">Informação interna: a liminar e a observação dela não aparecem no portal do cliente.</p>
                         <div className="tituloInput informacaoGrande campoCheckbox">
                             <label>
@@ -328,7 +330,7 @@ function ProcessosForm() {
 
                 {editando && (
                     <div className="secaoForm">
-                        <h3>Fase do processo</h3>
+                        <h3>Fase do processo<Ajuda assunto={AJUDA.processoFase.assunto}>{AJUDA.processoFase.texto}</Ajuda></h3>
                         <div className="tituloInput informacaoNormal">
                             <label>Fase atual</label>
                             <div className="select">

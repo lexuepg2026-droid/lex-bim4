@@ -20,6 +20,8 @@ import { mensagemDesativarProcesso, mensagemReativarProcesso, motivoDeNaoReativa
 import { useFiltroNaUrl } from "../../../hooks/useFiltroNaUrl";
 
 import "./Processos.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 function Processos() {
     const location = useLocation();
@@ -279,7 +281,7 @@ function Processos() {
                     ) : (
                         <>
                             <h1 className="processos">
-                                Processos <span className="contadorProcessos">({total})</span>
+                                Processos <span className="contadorProcessos">({total})</span><Ajuda assunto={AJUDA.processosDesativar.assunto}>{AJUDA.processosDesativar.texto}</Ajuda>
                             </h1>
 
                             <form className="barraPesquisar" onSubmit={(e) => e.preventDefault()}>
@@ -367,7 +369,7 @@ function Processos() {
                 {carregando ? (
                     <Loading />
                 ) : processos.length === 0 ? (
-                    !erro && <EmptyState titulo="Nenhum processo encontrado." descricao="Tente ajustar os filtros ou cadastre um novo processo." />
+                    !erro && <EmptyState titulo="Nenhum processo encontrado." descricao="Ajuste os filtros ou cadastre um processo no + ao lado da busca." />
                 ) : (
                     chavesOrdenadas.map((chave) => {
                         const processosDoGrupo = grupos[chave];

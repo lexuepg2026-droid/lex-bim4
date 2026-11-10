@@ -1,0 +1,104 @@
+/* DEC-172: o botão "?" e o balão, com os tokens, a borda e o raio dela. */
+
+.ajudaBotao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    width: 1rem;
+    height: 1rem;
+    margin-left: 0.4rem;
+    padding: 0;
+
+    border: none;
+    border-radius: 50%;
+    background: none;
+
+    vertical-align: middle;
+    line-height: 0;
+    cursor: pointer;
+}
+
+/* Contêineres dela dão tamanho a todo "button" de dentro (.formNovoParticipante
+   button, .acoesPortalForm button: altura 2.75rem e padding lateral), e o "?"
+   ficava 48x44 com o ícone de largura zero. A classe repetida vence esses
+   seletores sem tocar neles. Fica antes do :hover, que segue valendo. */
+.ajudaBotao.ajudaBotao {
+    width: 1rem;
+    height: 1rem;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+}
+
+.ajudaBotao img {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.ajudaBotao:hover {
+    background-color: var(--bege10);
+}
+
+.ajudaBotao:focus-visible {
+    outline: 2px solid var(--bege);
+    outline-offset: 2px;
+}
+
+.ajudaBalao {
+    position: fixed;
+    z-index: 1100;
+
+    width: max-content;
+    max-width: min(18rem, calc(100vw - 2rem));
+    padding: 0.75rem 1rem;
+
+    background-color: var(--cinzaClaro);
+    border: 1px solid var(--bege20);
+    border-radius: 1rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+    color: var(--bege);
+    font-size: 0.85rem;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: normal;
+    text-align: left;
+    text-transform: none;
+    white-space: normal;
+}
+
+.ajudaBalao[hidden] {
+    display: none;
+}
+
+.ajudaBalao p + p {
+    margin-top: 0.4rem;
+}
+
+/* Numa linha flex (barra de botões), o "?" fica centrado e não estica. */
+.ajudaBotao {
+    align-self: center;
+}
+
+.ajudaJunto {
+    white-space: nowrap;
+}
+
+/* Largura líquida zero: 0.4rem de margem + 1rem do botão - 1.4rem = 0. */
+.ajudaPendurada .ajudaBotao {
+    margin-right: -1.4rem;
+}
+
+/* O título que leva o "?" pendurado avança 1.4rem sobre o padding do cartão
+   e devolve a mesma medida como padding: a caixa do texto (e a quebra) fica
+   igual, e o "?" cai dentro do padding do próprio título. A classe repetida
+   vence o "margin: 0 0 0.75rem" do .modalTitulo, que vem depois no CSS. */
+.tituloComAjudaPendurada.tituloComAjudaPendurada {
+    margin-right: -1.4rem;
+    padding-right: 1.4rem;
+}

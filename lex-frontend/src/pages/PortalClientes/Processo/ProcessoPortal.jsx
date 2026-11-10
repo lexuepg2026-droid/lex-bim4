@@ -16,6 +16,8 @@ import {
 } from "../../../utils/portalLabels";
 
 import "./ProcessoPortal.css";
+import Ajuda from "../../../components/Ajuda/Ajuda";
+import { AJUDA } from "../../../components/Ajuda/textos";
 
 function ProcessoPortal() {
     const { processoId } = useParams();
@@ -192,7 +194,7 @@ function ProcessoPortal() {
                 </div>
 
                 <div className="secaoPortal">
-                    <h2>Confirmar que você está por dentro</h2>
+                    <h2>Confirmar que você está por dentro<Ajuda assunto={AJUDA.portalConfirmar.assunto}>{AJUDA.portalConfirmar.texto}</Ajuda></h2>
                     <p className="infoSecundaria">
                         {acesso?.ultimaConfirmacao
                             ? `Última confirmação em ${formatarDataHora(acesso.ultimaConfirmacao)}.`

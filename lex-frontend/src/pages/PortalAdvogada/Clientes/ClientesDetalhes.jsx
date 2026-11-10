@@ -382,7 +382,7 @@ function ClientesDetalhes() {
                         ) : erroProcessos ? (
                             <p className="mensagemErro">{erroProcessos}</p>
                         ) : processos.length === 0 ? (
-                            <EmptyState titulo="Nenhum processo vinculado." descricao="Esse cliente ainda não está em nenhum processo." />
+                            <EmptyState titulo="Nenhum processo vinculado." descricao="Para vincular, abra um processo e use a aba Participantes." />
                         ) : (
                             chavesProcessosOrdenadas.map((chave) => {
                                 const processosDoGrupo = gruposProcessos[chave];
@@ -448,7 +448,7 @@ function ClientesDetalhes() {
                         ) : erroProcessos ? (
                             <p className="mensagemErro">{erroProcessos}</p>
                         ) : !fichas || fichas.length === 0 ? (
-                            <EmptyState titulo="Nada por aqui ainda." descricao="Esse cliente não tem cobranças registradas em nenhum processo." />
+                            <EmptyState titulo="Nada por aqui ainda." descricao="Os honorários são cadastrados na aba Financeiro de cada processo do cliente." />
                         ) : (
                             <div className="detalheListaFinanceiro">
                                 {fichas.map((ficha) => (
