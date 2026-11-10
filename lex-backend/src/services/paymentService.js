@@ -24,6 +24,7 @@ import {
   emCentavos
 } from "./allocationService.js";
 import { carregarEstornos, totalEstornado } from "./reversalService.js";
+import { escreverDataDeCalendario, hojeNoEscritorio } from "../utils/dataDeCalendario.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PAGAMENTO — reescrito na Fase F-1 sobre o modelo imutável
@@ -74,13 +75,23 @@ const PAYMENT_POPULATE = {
 // Status derivado da parcela. Inalterado desde a 4.1, exceto por `cancelado`:
 // parcela cancelada por reparcelamento não é derivada — o estado dela é
 // decisão registrada, não conta.
-const definirStatusInstallment = (installment, totalAlocado) => {
+//
+// ── Fase 4a3 (DEC-174): "já venceu" é DATA DE CALENDÁRIO ─────────────────
+// Era `new Date(dataVencimento) < new Date()`, instante contra instante. O
+// vencimento é gravado como meia-noite UTC, que em Brasília é 21h do dia
+// ANTERIOR: a parcela virava `vencido` no próprio dia do vencimento, logo no
+// primeiro recálculo. Agora o vencimento é lido como data (`AAAA-MM-DD`) e
+// comparado ao dia de hoje no escritório (`America/Sao_Paulo`): vence no dia,
+// fica vencida a partir do dia seguinte. É a conta da DEC-165 no front.
+//
+// `agora` é parâmetro só para os testes fixarem o relógio.
+export const definirStatusInstallment = (installment, totalAlocado, agora = new Date()) => {
   if (installment.status === "cancelado") return "cancelado";
   if (totalAlocado >= installment.valor) return "pago";
   if (totalAlocado > 0) return "parcial";
 
-  const hoje = new Date();
-  if (new Date(installment.dataVencimento) < hoje) return "vencido";
+  const vencimento = escreverDataDeCalendario(installment.dataVencimento);
+  if (vencimento && vencimento < hojeNoEscritorio(agora)) return "vencido";
 
   return "pendente";
 };
@@ -179,7 +190,8 @@ export const recalcularStatusFee = async (feeId, usuarioId, origem = ORIGEM_STAT
 export const recalcularStatusInstallment = async (
   installmentId,
   usuarioId,
-  origem = ORIGEM_STATUS.RECALCULO
+  origem = ORIGEM_STATUS.RECALCULO,
+  agora = new Date()
 ) => {
   const installment = await Installment.findOne({ _id: installmentId, usuarioId });
   if (!installment) return null;
@@ -197,7 +209,7 @@ export const recalcularStatusInstallment = async (
 
   const totalAlocado = emCentavos(alocacoes.reduce((t, a) => t + Number(a.valor), 0));
 
-  installment.status = definirStatusInstallment(installment, totalAlocado);
+  installment.status = definirStatusInstallment(installment, totalAlocado, agora);
   installment.valorPago = totalAlocado;
   installment.dataPagamento =
     installment.status === "pago" && alocacoes.length > 0 ? alocacoes[0].data : null;

@@ -72,12 +72,16 @@ describe("DEC-138 — a lista de documentos: busca, período e só documentos", 
     });
 
     modelo = await montarModelo(adv, "Procuração de teste");
+    // Um segundo modelo para o segundo documento de cada processo: desde a
+    // DEC-173 (R6), regerar o mesmo modelo para o mesmo processo e cliente
+    // SUBSTITUI o anterior, e o arranjo precisa de quatro documentos ativos.
+    const modelo2 = await montarModelo(adv, "Contrato de teste");
 
     // A virada de setembro para outubro, em UTC: 30/09 às 23:59 e 01/10 às 00:00.
     d.procuracao = await gerarDocumento(adv, modelo._id, pJoao, joao, "Procuração ad judicia", "2026-09-30T23:59:00Z");
     d.contrato = await gerarDocumento(adv, modelo._id, pMaria, maria, "Contrato de honorários", "2026-10-01T00:00:00Z");
-    d.declaracao = await gerarDocumento(adv, modelo._id, pMaria, maria, "Declaração de hipossuficiência", "2026-10-31T23:59:59Z");
-    d.novembro = await gerarDocumento(adv, modelo._id, pJoao, joao, "Petição de novembro", "2026-11-01T00:00:00Z");
+    d.declaracao = await gerarDocumento(adv, modelo2._id, pMaria, maria, "Declaração de hipossuficiência", "2026-10-31T23:59:59Z");
+    d.novembro = await gerarDocumento(adv, modelo2._id, pJoao, joao, "Petição de novembro", "2026-11-01T00:00:00Z");
 
     // A outra advogada: o mesmo nome de documento e de cliente, na mesma data.
     const delaCliente = await criarClientePF(outra, { nomeCompleto: "João Inventariante" });
@@ -99,8 +103,8 @@ describe("DEC-138 — a lista de documentos: busca, período e só documentos", 
   // ── Sem os parâmetros novos: a de sempre ────────────────────────────────
   test("sem os parâmetros novos, a listagem de sempre: documentos E modelos, mais novos primeiro", async () => {
     const corpo = await lista("");
-    // 4 documentos + 1 modelo, todos da usuária.
-    assert.equal(corpo.total, 5);
+    // 4 documentos + 2 modelos, todos da usuária.
+    assert.equal(corpo.total, 6);
     assert.ok(corpo.data.some((x) => x.ehModelo === true), "o modelo continua na listagem sem `ehModelo`");
     for (const chave of ["data", "total", "page", "limit", "totalPages"]) assert.ok(chave in corpo, chave);
     // `processoId` continua populado, e `clienteId` continua id.
@@ -130,7 +134,8 @@ describe("DEC-138 — a lista de documentos: busca, período e só documentos", 
 
   test("`?ehModelo=true` só os modelos; outro valor → 400 com `campo`", async () => {
     const corpo = await lista("ehModelo=true");
-    assert.deepEqual(nomes(corpo), ["Procuração de teste"]);
+    // Os dois modelos do arranjo (o segundo veio com a DEC-173), mais novo primeiro.
+    assert.deepEqual(nomes(corpo), ["Contrato de teste", "Procuração de teste"]);
     const r = await adv.get("/documents?ehModelo=nao");
     assert.equal(r.status, 400);
     assert.equal(r.body.campo, "ehModelo");
@@ -215,7 +220,7 @@ describe("DEC-138 — a lista de documentos: busca, período e só documentos", 
   test("`GET /documents/modelos?busca=` pelo nome, sem acento; sem busca, a de sempre", async () => {
     await montarModelo(adv, "Declaração de autônomo");
     const todos = esperado(await adv.get("/documents/modelos?limit=100"), 200, "modelos");
-    assert.equal(todos.total, 2);
+    assert.equal(todos.total, 3); // os dois do arranjo + este
     const achados = esperado(await adv.get("/documents/modelos?busca=AUTONOMO"), 200, "busca");
     assert.deepEqual(achados.data.map((m) => m.nome), ["Declaração de autônomo"]);
     const dela = esperado(await outra.get("/documents/modelos?busca=autonomo"), 200, "dela");

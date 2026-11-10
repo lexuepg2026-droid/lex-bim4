@@ -622,15 +622,27 @@ export const gerarDocumentoService = async (
     geradoDeModeloId: modelo._id
   });
 
-  // Confirmada a sobrescrita, o anterior sai de cena por soft delete. Mantê-lo
-  // ativo faria a listagem exibir duas versões do mesmo documento sem dizer
-  // qual vale; o soft delete preserva o texto revisado caso tenha sido engano.
+  // Regerar SEMPRE substitui o anterior (DEC-173, fase R6). O anterior sai de
+  // cena por soft delete. Mantê-lo ativo faria a listagem exibir duas versões
+  // do mesmo documento sem dizer qual vale; o soft delete preserva o texto
+  // anterior caso tenha sido engano.
+  //
+  // Até a R5 isso só acontecia no caminho CONFIRMADO (o anterior editado à
+  // mão). O anterior não editado continuava ativo ao lado do novo, e a lista
+  // ganhava uma cópia a cada regeração. Os três caminhos agora:
+  //   • sem anterior               → cria;
+  //   • anterior sem edição à mão  → cria e substitui, direto;
+  //   • anterior editado à mão     → 409 sem `confirmarSobrescrita` (acima);
+  //                                  com ela, cria e substitui.
+  // O novo nasce fora do portal nos três (o default `visivelPortal: false`).
   //
   // Acontece DEPOIS da criação, e não antes, porque `substituidoPorId` precisa
   // do _id do documento novo. É essa referência que mantém a cadeia navegável:
-  // o texto que a advogada revisou à mão continua recuperável e diz para onde
-  // a versão vigente foi.
-  if (anterior && confirmarSobrescrita === true) {
+  // o texto anterior continua recuperável e diz para onde a versão vigente foi.
+  //
+  // Depois do 409 acima, `anterior` existir já significa "não editado" ou
+  // "editado e confirmado".
+  if (anterior) {
     anterior.ativo = false;
     anterior.substituidoPorId = gerado._id;
     await anterior.save();

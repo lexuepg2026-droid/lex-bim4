@@ -5,10 +5,14 @@ import {
   getPagamentosDoProcesso
 } from "../controllers/dashboardController.js";
 import authMiddleware from "../middleware/authMiddleware.js";
+import { atualizarVencidas } from "../services/vencimentoService.js";
 
 const router = Router();
 
 router.use(authMiddleware);
+// Fase 4a3 (DEC-174): antes de ler, grava `vencido` nas parcelas pendentes
+// cujo vencimento já passou (com freio de 10 minutos por advogada).
+router.use(atualizarVencidas);
 
 // Resumo global do escritório, do dashboard.
 router.get("/resumo", getFinanceiro);

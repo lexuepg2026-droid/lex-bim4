@@ -72,3 +72,14 @@
 .modalBotaoPerigo:hover:enabled {
     background-color: var(--vermelho);
 }
+/* Celular (fase R6): o modal mais alto que a tela tinha o topo cortado, sem
+   rolagem ("Registrar pagamento" a 360 e 412 px; também a parcela, o
+   reparcelamento e o honorário a 360 px). A caixa cabe na altura da tela,
+   menos o padding de 1rem do .modalOverlay, e rola por dentro, como o
+   .calendarioFormCaixa e o .gerarCaixa dela. Ao abrir, o título fica visível. */
+@media (max-width: 600px) {
+    .modalCaixa {
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+    }
+}

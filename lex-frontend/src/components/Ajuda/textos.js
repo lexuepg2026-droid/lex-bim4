@@ -117,7 +117,7 @@ export const AJUDA = {
     },
     regerar: {
         assunto: "regerar",
-        texto: "Regerar cria o documento de novo, com as seções e os dados de hoje. Se este texto foi editado à mão, o sistema pede confirmação e, confirmando, o novo substitui o anterior, que sai da lista. O documento regerado nasce fora do portal, mesmo que o anterior estivesse visível.",
+        texto: "Regerar cria o documento de novo, com as seções e os dados de hoje, e o novo substitui o anterior, que sai da lista. Se este texto foi editado à mão, o sistema pede confirmação antes. O documento regerado nasce fora do portal, mesmo que o anterior estivesse visível.",
     },
     visivelPortal: {
         assunto: "visível no portal",
@@ -218,7 +218,7 @@ export const COMO_USAR = [
             "O modelo junta seções numa ordem. Gerar o modelo para um processo e um cliente cria o documento, com as variáveis preenchidas.",
             "Se faltar algum dado, o documento não é gerado, e a tela diz o que completar.",
             "O texto final pode ser editado à mão; editar o documento não muda o modelo.",
-            "Regerar refaz o texto com os dados de hoje. Se o documento foi editado à mão, o sistema pede confirmação antes de substituir.",
+            "Regerar refaz o texto com os dados de hoje e substitui o anterior. Se o documento foi editado à mão, o sistema pede confirmação antes.",
             "Todo documento novo nasce fora do portal. Use \"Liberar no portal\" no documento para o cliente ver.",
         ],
     },
